@@ -1,4 +1,4 @@
-/* ethoverudp: used to create transparent bridge over ipv4/ipv6 network
+/* EthUDP: used to create transparent bridge over ipv4/ipv6 network
 	  by james@ustc.edu.cn 2009.04.02
 
 
@@ -16,13 +16,24 @@ server A IP is IPA
 server B IP is IPB
 
 run following command in server A
-./ethoverudp IPA 6000 IPB 6000 eth1
+ip link set eth1 up
+ifconfig eth1 mtu 1508
+./EthUDP IPA 6000 IPB 6000 eth1
 
 
 run following command in server B
-./ethoverudp IPB 6000 IPA 6000 eth1
+ip link set eth1 up
+ifconfig eth1 mtu 1508
+./EthUDP IPB 6000 IPA 6000 eth1
 
 will bridge eth1 of two host via internet UDP port 6000
+
+how it works:
+1. open raw socket for eth1
+2. open udp socket to remote
+3. if packet from raw socket, send to udp socket
+4. if packet from udp socket, send to raw socket
+
 
 */	
 
@@ -306,12 +317,12 @@ int main(int argc, char *argv[])
 	int fdudp, fdraw;
 
   	if(argc < 6) {
-  		printf("Usage: ethoverudp localip localport remoteip remoteport eth?");
+  		printf("Usage: ./EthUDP localip localport remoteip remoteport eth?");
   		exit(1);
   	}
 
 if (!DEBUG) {
-	daemon_init("v6tap",LOG_DAEMON);
+	daemon_init("EthUDP",LOG_DAEMON);
 	while(1) {
    		int pid;
       		pid=fork();
@@ -334,23 +345,17 @@ if (!DEBUG) {
  	flags = fcntl(fdudp, F_GETFL, 0);
   	fcntl(fdudp, F_SETFL, O_NONBLOCK | flags);
 
-	int count = 0;
 
 	while(1){
   		char buf[MAX_PACKET_SIZE];
   		fd_set fds;
-		int fm,l;
+		int l;
 
-		count++;
-		if(count==10) exit(0);
-
-		fm=0;
 		FD_ZERO(&fds);
 		FD_SET(fdudp, &fds);
 		FD_SET(fdraw , &fds);
-  		fm = max(fdudp, fdraw);
 			
-		select(fm+1, &fds, NULL, NULL, NULL);
+		select(max(fdudp, fdraw)+1, &fds, NULL, NULL, NULL);
 
 		if( FD_ISSET(fdraw, &fds) ) {  // read from eth rawsocket
 			l = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
