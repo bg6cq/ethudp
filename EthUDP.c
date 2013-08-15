@@ -42,7 +42,6 @@ how it works:
 // +-------+-------+---------+----+---------------+
 // | DMAC  | SMAC  |8100 VLAN|Type|Payload (4Bfix)|
 // +-------+-------+---------+----+---------------+
-//                  <-------> when VLAN == Yes
 
 
 #include <stdio.h>
@@ -303,11 +302,18 @@ int32_t open_socket(char *ifname, int32_t *rifindex) {
 }
 
 
-void printPacket(EtherPacket *packet, ssize_t packetSize, char *message) {
-  printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
-	 message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
-	 ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
-	 ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+void printPacket(EtherPacket *packet, ssize_t packetSize, char *message) 
+{
+        if ( ntohl(packet->VLANTag) >> 16 == 0x8100 )  // VLAN tag
+                printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
+                        message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
+                        ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
+                        ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+        else
+                printf("%s #%04x (no VLAN) from %04x%08x to %04x%08x, len=%d\n",
+                        message, ntohl(packet->VLANTag) >> 16,
+                        ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
+                        ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
 }
 
 
