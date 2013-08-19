@@ -383,6 +383,7 @@ void fix_mss(char *buf, int len)
 	packet = buf +12; // skip ethernet dst & src addr
 	len -=12;
 
+	
 	if( (packet[0] == 0x81) && (packet[1] == 0x00) ) { // skip 802.1Q tag
 		packet +=2;
 		len -=2;
@@ -395,17 +396,20 @@ void fix_mss(char *buf, int len)
 	struct iphdr *ip = (struct iphdr *) packet;
 
 	if( ip->version !=4 ) return; // only support ipv4
-	if( ip->frag_off & 0x1fff ) return;  // not the first fragment
+	if( ntohs(ip->frag_off) & 0x1fff ) return;  // not the first fragment
 	if( ip->protocol != IPPROTO_TCP ) return; // not tcp packet
 	if( ntohs(ip->tot_len) > len ) return;  // tot_len ??
 
-	struct tcphdr *tcph = (struct tcphdr*) packet + ip->ihl *4;
+	struct tcphdr *tcph = (struct tcphdr*) (packet + ip->ihl *4);
 
+	if(DEBUG) printf("fixmss tcp syn=%d\n",tcph->syn);
 	if( !tcph->syn ) return;	
-	char * opt = (u_int8_t *)tcph;
+	if(DEBUG) printf("fixmss tcp syn\n");
+	u_int8_t * opt = (u_int8_t *)tcph;
 	for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
 		if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
 			opt[i+1] == 4 ) {
+	if(DEBUG) printf("fixmss tcp mss\n");
 			u_int16_t oldmss;
 			oldmss = (opt[i+2] << 8) | opt[i+3];
 			/* Never increase MSS, even when setting it, as
@@ -419,7 +423,7 @@ void fix_mss(char *buf, int len)
 			opt[i+3] = newmss & 0x00ff;
 		
 			tcph->check = 0; /* Checksum field has to be set to 0 before checksumming */
-			tcph->check = (unsigned short) tcp_sum_calc((unsigned short) (ip->tot_len - ip->ihl *4), (unsigned short *) &ip->saddr, (unsigned short *) &ip->daddr, (unsigned short *) &tcph); 
+			tcph->check = (unsigned short) tcp_sum_calc((unsigned short) (ntohs(ip->tot_len) - ip->ihl *4), (unsigned short *) &ip->saddr, (unsigned short *) &ip->daddr, (unsigned short *) &tcph); 
 			return;
  		}
 	}
