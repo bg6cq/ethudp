@@ -58,6 +58,8 @@ how it works:
 #include <sys/socket.h>
 #include <linux/if_packet.h>
 #include <linux/if_ether.h> 
+#include <netinet/ip.h> 
+#include <netinet/tcp.h> 
 #include <elf.h>
 #include <netdb.h>
 #include <stdarg.h>
@@ -316,6 +318,111 @@ void printPacket(EtherPacket *packet, ssize_t packetSize, char *message)
                         ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
 }
 
+// function from http://www.bloof.de/tcp_checksumming, thanks to crunsh
+unsigned short tcp_sum_calc(unsigned short len_tcp, unsigned short src_addr[],unsigned short dest_addr[], unsigned short buff[])
+{
+    unsigned char prot_tcp=6;
+    unsigned long sum;
+    int nleft;
+    unsigned short *w;
+ 
+    sum = 0;
+    nleft = len_tcp;
+    w=buff;
+ 
+    /* calculate the checksum for the tcp header and payload */
+    while(nleft > 1)
+    {
+        sum += *w++;
+        nleft -= 2;
+    }
+ 
+    /* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
+    if(nleft>0)
+    {
+    	/* sum += *w&0xFF; */
+             sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
+    }
+ 
+    /* add the pseudo header */
+    sum += src_addr[0];
+    sum += src_addr[1];
+    sum += dest_addr[0];
+    sum += dest_addr[1];
+    sum += htons(len_tcp);
+    sum += htons(prot_tcp);
+ 
+    // keep only the last 16 bits of the 32 bit calculated sum and add the carries
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum += (sum >> 16);
+ 
+    // Take the one's complement of sum
+    sum = ~sum;
+ 
+    return ((unsigned short) sum);
+}
+
+static unsigned int optlen(const u_int8_t *opt, unsigned int offset)
+{
+	/* Beware zero-length options: make finite progress */
+	if (opt[offset] <= TCPOPT_NOP || opt[offset+1] == 0)
+		return 1;
+	else
+		return opt[offset+1];
+}
+
+void fix_mss(char *buf, int len)
+{
+	u_int8_t * packet;
+	int i;
+
+	int newmss = 1400;
+
+	if( len < 54 ) return;
+	packet = buf +12; // skip ethernet dst & src addr
+	len -=12;
+
+	if( (packet[0] == 0x81) && (packet[1] == 0x00) ) { // skip 802.1Q tag
+		packet +=2;
+		len -=2;
+	}
+	if( (packet[0] == 0x08) && (packet[1] == 0x00) ) { // IP packet 
+		packet +=2;
+		len -=2;
+	} else return; // not IP packet
+	
+	struct iphdr *ip = (struct iphdr *) packet;
+
+	if( ip->version !=4 ) return; // only support ipv4
+	if( ip->frag_off & 0x1fff ) return;  // not the first fragment
+	if( ip->protocol != IPPROTO_TCP ) return; // not tcp packet
+	if( ntohs(ip->tot_len) > len ) return;  // tot_len ??
+
+	struct tcphdr *tcph = (struct tcphdr*) packet + ip->ihl *4;
+
+	if( !tcph->syn ) return;	
+	char * opt = (u_int8_t *)tcph;
+	for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
+		if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
+			opt[i+1] == 4 ) {
+			u_int16_t oldmss;
+			oldmss = (opt[i+2] << 8) | opt[i+3];
+			/* Never increase MSS, even when setting it, as
+			 * doing so results in problems for hosts that rely
+			 * on MSS being set correctly.
+			*/
+			if (oldmss <= newmss)
+				return;
+			if(DEBUG) printf("change mss from %d to %d\n",oldmss,newmss);
+			opt[i+2] = (newmss & 0xff00) >> 8;
+			opt[i+3] = newmss & 0x00ff;
+		
+			tcph->check = 0; /* Checksum field has to be set to 0 before checksumming */
+			tcph->check = (unsigned short) tcp_sum_calc((unsigned short) (ip->tot_len - ip->ihl *4), (unsigned short *) &ip->saddr, (unsigned short *) &ip->daddr, (unsigned short *) &tcph); 
+			return;
+ 		}
+	}
+}
 
 int main(int argc, char *argv[])
 {
@@ -367,6 +474,7 @@ if (!DEBUG) {
 			l = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
 			if(DEBUG) printf("%d bytes from eth rawsocket\n",l);
 			if(l<=0) continue;
+			fix_mss(buf,l);
 			if(DEBUG) {
    	   			EtherPacket *packet = (EtherPacket*) buf;
       				printPacket(packet, l , "Received:");
@@ -378,6 +486,7 @@ if (!DEBUG) {
 			l = read(fdudp,buf,sizeof(buf));
 			if(DEBUG) printf("%d bytes from udp socket\n",l);
 			if(l<=0) continue;
+			fix_mss(buf,l);
 			if(DEBUG) {
    	   			EtherPacket *packet = (EtherPacket*) buf;
       				printPacket(packet, l , "Received:");
