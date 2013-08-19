@@ -70,6 +70,7 @@ how it works:
 #define MAXLEN 2048
 #define MAX_PACKET_SIZE	2048
 #define MAXFD   64
+#define NEWMSS 1400
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
 int             daemon_proc;            /* set nonzero by daemon_init() */
@@ -376,7 +377,7 @@ void fix_mss(char *buf, int len)
 	u_int8_t * packet;
 	int i;
 
-	int newmss = 1400;
+	int newmss = NEWMSS;
 
 	if( len < 54 ) return;
 	packet = buf +12; // skip ethernet dst & src addr
