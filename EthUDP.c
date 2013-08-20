@@ -1,7 +1,6 @@
 /* EthUDP: used to create transparent bridge over ipv4/ipv6 network
 	  by james@ustc.edu.cn 2009.04.02
 
-
      |                             |
      |                             |
      |    |                        |    |
@@ -35,6 +34,11 @@ how it works:
 4. if packet from udp socket, send to raw socket
 
 
+Note:
+
+1. support 802.1Q VLAN frame tranport
+2. support automatic tcp mss fix
+
 */	
 
 
@@ -61,19 +65,21 @@ how it works:
 #include <linux/if_packet.h>
 #include <linux/if_ether.h> 
 #include <netinet/ip.h> 
+#include <netinet/ip6.h> 
 #include <netinet/tcp.h> 
 #include <netdb.h>
 #include <stdarg.h>
 #include <errno.h>
 
-#define DEBUG		0
+#define DEBUG		1
 
+
+// uncomment to enable automatic mss fix
 #define CHANGEMSS   1
 
-#define MAXLEN 2048
+#define MAXLEN 			2048
 #define MAX_PACKET_SIZE	2048
-#define MAXFD   64
-#define NEWMSS 1400
+#define MAXFD   		64
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
 int             daemon_proc;            /* set nonzero by daemon_init() */
@@ -147,93 +153,93 @@ err_sys(const char *fmt, ...)
 void
 daemon_init(const char *pname, int facility)
 {
-        int    	i;
-        pid_t   pid;
+	int    	i;
+	pid_t   pid;
+	if ( (pid = fork()) != 0)
+		exit(0);                        /* parent terminates */
 
-        if ( (pid = fork()) != 0)
-                exit(0);                        /* parent terminates */
+	/* 41st child continues */
+	setsid();                               /* become session leader */
 
-        /* 41st child continues */
-        setsid();                               /* become session leader */
+	signal(SIGHUP, SIG_IGN);
+	if ( (pid = fork()) != 0)
+		exit(0);                        /* 1st child terminates */
 
-        signal(SIGHUP, SIG_IGN);
-        if ( (pid = fork()) != 0)
-                exit(0);                        /* 1st child terminates */
+	/* 42nd child continues */
+	daemon_proc = 1;                /* for our err_XXX() functions */
 
-        /* 42nd child continues */
-        daemon_proc = 1;                /* for our err_XXX() functions */
+	umask(0);                               /* clear our file mode creation mask */
 
-        umask(0);                               /* clear our file mode creation mask */
+	for (i = 0; i < MAXFD; i++)
+		close(i);
 
-        for (i = 0; i < MAXFD; i++)
-                close(i);
-
-        openlog(pname, LOG_PID, facility);
+	openlog(pname, LOG_PID, facility);
 }
+
+int transfamily = 0;
 
 int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 {
-        int	sockfd, n;
-    	int	on=1;
-        struct addrinfo hints, *res, *ressave;
+	int	sockfd, n;
+	int	on=1;
+	struct addrinfo hints, *res, *ressave;
 
-        bzero(&hints, sizeof(struct addrinfo));
-        hints.ai_flags = AI_PASSIVE;
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_DGRAM;
+	bzero(&hints, sizeof(struct addrinfo));
+	hints.ai_flags = AI_PASSIVE;
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
 
-        if ( (n = getaddrinfo(host, serv, &hints, &res)) != 0) 
-                err_quit("udp_server error for %s, %s", host, serv);
-        ressave = res;
+	if ( (n = getaddrinfo(host, serv, &hints, &res)) != 0) 
+		err_quit("udp_server error for %s, %s", host, serv);
+	ressave = res;
 
-        do {
-                sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-                if (sockfd < 0)
-                        continue;               /* error, try next one */
-        		setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&on,1);
-                if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
-                        break;                  /* success */
+	do {
+		transfamily = res->ai_family;
+		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+		if (sockfd < 0)
+			continue;               /* error, try next one */
+		setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&on,1);
+		if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
+			break;                  /* success */
 
-                close(sockfd);          /* bind error, close and try next one */
-        } while ( (res = res->ai_next) != NULL);
+        close(sockfd);          /* bind error, close and try next one */
+   } while ( (res = res->ai_next) != NULL);
 
-        if (res == NULL)        /* errno from final socket() or bind() */
-                err_sys("udp_server error for %s, %s", host, serv);
+   if (res == NULL)        /* errno from final socket() or bind() */
+		err_sys("udp_server error for %s, %s", host, serv);
 
-        if (addrlenp)
-                *addrlenp = res->ai_addrlen;    /* return size of protocol address */
+	if (addrlenp)
+   		*addrlenp = res->ai_addrlen;    /* return size of protocol address */
 
-        freeaddrinfo(ressave);
+  	freeaddrinfo(ressave);
 
-        return(sockfd);
+	return(sockfd);
 }
 
 int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
 {
-        int	sockfd, n;
-        struct addrinfo hints, *res, *ressave;
-        sockfd = udp_server(lhost,lserv,NULL);
-        bzero(&hints, sizeof(struct addrinfo));
-        hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_DGRAM;
+	int	sockfd, n;
+	struct addrinfo hints, *res, *ressave;
+	sockfd = udp_server(lhost,lserv,NULL);
+	bzero(&hints, sizeof(struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
 
-        if ( (n = getaddrinfo(rhost, rserv, &hints, &res)) != 0) 
-                err_quit("udp_xconnect error for %s, %s",
-                                 rhost, rserv);
-        ressave = res;
-        do {
-                if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
-                        break;          /* success */
-        } while ( (res = res->ai_next) != NULL);
+   	if ( (n = getaddrinfo(rhost, rserv, &hints, &res)) != 0) 
+   		err_quit("udp_xconnect error for %s, %s", rhost, rserv);
+	ressave = res;
+   	do {
+   		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
+       		break;          /* success */
+	} while ( (res = res->ai_next) != NULL);
 
-        if (res == NULL)        /* errno set from final connect() */
-                err_sys("udp_xconnect error for %s, %s", rhost, rserv);
+	if (res == NULL)        /* errno set from final connect() */
+		err_sys("udp_xconnect error for %s, %s", rhost, rserv);
 
-        freeaddrinfo(ressave);
+	freeaddrinfo(ressave);
 
-        return(sockfd);
+	return(sockfd);
 }
-
 
 
 
@@ -299,16 +305,16 @@ int32_t open_socket(char *ifname, int32_t *rifindex) {
 
 void printPacket(EtherPacket *packet, ssize_t packetSize, char *message) 
 {
-        if ( (ntohl(packet->VLANTag) >> 16) == 0x8100 )  // VLAN tag
-                printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
-                        message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
-                        ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
-                        ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
-        else
-                printf("%s #%04x (no VLAN) from %04x%08x to %04x%08x, len=%d\n",
-                        message, ntohl(packet->VLANTag) >> 16,
-                        ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
-                        ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+	if ( (ntohl(packet->VLANTag) >> 16) == 0x8100 )  // VLAN tag
+		printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
+			message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
+			ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
+			ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+	else
+		printf("%s #%04x (no VLAN) from %04x%08x to %04x%08x, len=%d\n",
+			message, ntohl(packet->VLANTag) >> 16,
+			ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
+			ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
 }
 
 // function from http://www.bloof.de/tcp_checksumming, thanks to crunsh
@@ -348,6 +354,43 @@ u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_ad
     return ((u_int16_t) sum);
 }
 
+
+u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_addr[], u_int16_t buff[])
+{
+    u_int16_t prot_tcp = 6;
+    u_int32_t sum = 0 ;
+    int nleft = len_tcp;
+    u_int16_t *w = buff;
+ 
+    /* calculate the checksum for the tcp header and payload */
+    while(nleft > 1)
+    {
+        sum += *w++;
+        nleft -= 2;
+    }
+ 
+    /* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
+    if(nleft>0)
+             sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
+ 
+    /* add the pseudo header */
+	int i;
+	for ( i=0; i<8; i++ ) 
+		sum = sum + src_addr[i] + dest_addr[i];
+	
+    sum += htons(len_tcp);   // why using 32bit len_tcp
+    sum += htons(prot_tcp);
+ 
+    // keep only the last 16 bits of the 32 bit calculated sum and add the carries
+    sum = (sum >> 16) + (sum & 0xFFFF);
+    sum += (sum >> 16);
+ 
+    // Take the one's complement of sum
+    sum = ~sum;
+ 
+    return ((u_int16_t) sum);
+}
+
 static unsigned int optlen(const u_int8_t *opt, unsigned int offset)
 {
 	/* Beware zero-length options: make finite progress */
@@ -362,7 +405,7 @@ void fix_mss(char *buf, int len)
 	u_int8_t * packet;
 	int i;
 
-	int newmss = NEWMSS;
+	int VLANdot1Q=0;
 
 	if( len < 54 ) return;
 	packet = buf +12; // skip ethernet dst & src addr
@@ -371,46 +414,92 @@ void fix_mss(char *buf, int len)
 	if( (packet[0] == 0x81) && (packet[1] == 0x00) ) { // skip 802.1Q tag
 		packet +=4;
 		len -=4;
+		VLANdot1Q=1;
 	}
-	if( (packet[0] == 0x08) && (packet[1] == 0x00) ) { // IP packet 
+	if( (packet[0] == 0x08) && (packet[1] == 0x00) ) { // IPv4 packet 
 		packet +=2;
 		len -=2;
-	} else return; // not IP packet
 	
-	struct iphdr *ip = (struct iphdr *) packet;
+		struct iphdr *ip = (struct iphdr *) packet;
 
-	if( ip->version != 4 ) return; // only support ipv4
-	if( ntohs(ip->frag_off) & 0x1fff ) return;  // not the first fragment
-	if( ip->protocol != IPPROTO_TCP ) return; // not tcp packet
-	if( ntohs(ip->tot_len) > len ) return;  // tot_len should < len 
+		if( ip->version != 4 ) return; // check ipv4
+		if( ntohs(ip->frag_off) & 0x1fff ) return;  // not the first fragment
+		if( ip->protocol != IPPROTO_TCP ) return; // not tcp packet
+		if( ntohs(ip->tot_len) > len ) return;  // tot_len should < len 
 
-	struct tcphdr *tcph = (struct tcphdr*) (packet + ip->ihl *4);
+		struct tcphdr *tcph = (struct tcphdr*) (packet + ip->ihl *4);
 
-	if(DEBUG) printf("fixmss tcp syn=%d\n",tcph->syn);
-	if( !tcph->syn ) return;	
-	if(DEBUG) printf("fixmss tcp syn\n");
-	u_int8_t * opt = (u_int8_t *)tcph;
-	for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
-		if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
-			opt[i+1] == 4 ) {
-	if(DEBUG) printf("fixmss tcp mss\n");
-			u_int16_t oldmss;
-			oldmss = (opt[i+2] << 8) | opt[i+3];
-			/* Never increase MSS, even when setting it, as
-			 * doing so results in problems for hosts that rely
-			 * on MSS being set correctly.
-			*/
-			if (oldmss <= newmss)
+		if( !tcph->syn ) return;	
+		if(DEBUG) printf("fixmss ipv4 tcp syn\n");
+		u_int8_t * opt = (u_int8_t *)tcph;
+		for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
+			if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
+				opt[i+1] == 4 ) {
+				u_int16_t newmss = 0, oldmss;
+				if ( transfamily == PF_INET )
+					newmss = 1418;
+				else if ( transfamily == PF_INET6) 
+					newmss = 1398;
+				if (VLANdot1Q) newmss -=4;
+				oldmss = (opt[i+2] << 8) | opt[i+3];
+				/* Never increase MSS, even when setting it, as
+			 	* doing so results in problems for hosts that rely
+			 	* on MSS being set correctly.
+				*/
+				if (oldmss <= newmss)
+					return;
+				if(DEBUG) printf("change inner v4 tcp mss from %d to %d\n",oldmss,newmss);
+				opt[i+2] = (newmss & 0xff00) >> 8;
+				opt[i+3] = newmss & 0x00ff;
+			
+				tcph->check = 0; /* Checksum field has to be set to 0 before checksumming */
+				tcph->check = (u_int16_t) tcp_sum_calc((u_int16_t) (ntohs(ip->tot_len) - ip->ihl *4), (u_int16_t*) &ip->saddr, (u_int16_t*) &ip->daddr, (u_int16_t *) tcph); 
 				return;
-			if(DEBUG) printf("change mss from %d to %d\n",oldmss,newmss);
-			opt[i+2] = (newmss & 0xff00) >> 8;
-			opt[i+3] = newmss & 0x00ff;
-		
-			tcph->check = 0; /* Checksum field has to be set to 0 before checksumming */
-			tcph->check = (u_int16_t) tcp_sum_calc((u_int16_t) (ntohs(ip->tot_len) - ip->ihl *4), (u_int16_t*) &ip->saddr, (u_int16_t*) &ip->daddr, (u_int16_t *) tcph); 
-			return;
- 		}
-	}
+ 			}
+		}
+		return;
+	} else if( (packet[0] == 0x86) && (packet[1] == 0xdd) ) { // IPv6 packet 
+		packet +=2;
+		len -=2;
+
+		struct ip6_hdr *ip6 = (struct ip6_hdr *) packet;
+
+		if( (ip6->ip6_vfc&0xf0) != 0x60 ) return; // check ipv6
+		if( ip6->ip6_nxt!= IPPROTO_TCP ) return; // not tcp packet
+		if( ntohs(ip6->ip6_plen) > len ) return;  // tot_len should < len 
+
+		struct tcphdr *tcph = (struct tcphdr*) (packet + 40);
+
+		if( !tcph->syn ) return;	
+		if(DEBUG) printf("fixmss ipv6 tcp syn\n");
+		u_int8_t * opt = (u_int8_t *)tcph;
+		for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
+			if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
+				opt[i+1] == 4 ) {
+				u_int16_t newmss = 0, oldmss;
+				if ( transfamily == PF_INET )
+					newmss = 1398;
+				else if ( transfamily == PF_INET6) 
+					newmss = 1378;
+				if (VLANdot1Q) newmss -=4;
+				oldmss = (opt[i+2] << 8) | opt[i+3];
+				/* Never increase MSS, even when setting it, as
+			 	* doing so results in problems for hosts that rely
+			 	* on MSS being set correctly.
+				*/
+				if (oldmss <= newmss)
+					return;
+				if(DEBUG) printf("change inner v6 tcp mss from %d to %d\n",oldmss,newmss);
+				opt[i+2] = (newmss & 0xff00) >> 8;
+				opt[i+3] = newmss & 0x00ff;
+			
+				tcph->check = 0; /* Checksum field has to be set to 0 before checksumming */
+				tcph->check = (u_int16_t) tcp_sum_calc_v6((u_int16_t) ntohs(ip6->ip6_plen), (u_int16_t*) &ip6->ip6_src, (u_int16_t*) &ip6->ip6_dst, (u_int16_t *) tcph); 
+				return;
+ 			}
+		}
+		return;
+	} else return; // not IP packet
 }
 
 int main(int argc, char *argv[])
@@ -461,28 +550,25 @@ if (!DEBUG) {
 
 		if( FD_ISSET(fdraw, &fds) ) {  // read from eth rawsocket
 			l = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
-			if(DEBUG) printf("%d bytes from eth rawsocket\n",l);
 			if(l<=0) continue;
 #ifdef CHANGEMSS
 			fix_mss(buf,l);
 #endif
 			if(DEBUG) {
    	   			EtherPacket *packet = (EtherPacket*) buf;
-      				printPacket(packet, l , "Received:");
+     			printPacket(packet, l , "Received from rawsocket:");
 			}
 			l = write(fdudp,buf,l);
-			if(DEBUG) printf("%d bytes write to udp\n",l);
 		}  
 		if( FD_ISSET(fdudp, &fds) ) {  // read from remote udp
 			l = read(fdudp,buf,sizeof(buf));
-			if(DEBUG) printf("%d bytes from udp socket\n",l);
 			if(l<=0) continue;
 #ifdef CHANGEMSS
 			fix_mss(buf,l);
 #endif
 			if(DEBUG) {
    	   			EtherPacket *packet = (EtherPacket*) buf;
-      				printPacket(packet, l , "Received:");
+   				printPacket(packet, l , "Received from udpsocket:");
 			}
   
 			struct sockaddr_ll sll;
@@ -491,7 +577,6 @@ if (!DEBUG) {
   			sll.sll_protocol = htons(ETH_P_ALL);	// Ethernet type = Trans. Ether Bridging
   			sll.sll_ifindex = ifindex;
   			l = sendto(fdraw, buf, l, 0, (struct sockaddr *)&sll, sizeof(sll));
-			if(DEBUG) printf("%d bytes write to rawsocket\n",l);
 		}
 	}
 }
