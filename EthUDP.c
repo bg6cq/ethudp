@@ -1,4 +1,5 @@
 /* EthUDP: used to create transparent bridge over ipv4/ipv6 network
+	
 	  by james@ustc.edu.cn 2009.04.02
 
      |                             |
@@ -29,23 +30,17 @@ will bridge eth1 of two host via internet UDP port 6000
 
 how it works:
 1. open raw socket for eth1
-2. open udp socket to remote
-3. if packet from raw socket, send to udp socket
-4. if packet from udp socket, send to raw socket
+2. open udp socket to remote host
+3. if read packet from raw socket, send to udp socket
+4. if read packet from udp socket, send to raw socket
 
 
 Note:
 
-1. support 802.1Q VLAN frame tranport
+1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
 
 */	
-
-
-// 0       6      12      12/16 14/18           18/22
-// +-------+-------+---------+----+---------------+
-// | DMAC  | SMAC  |8100 VLAN|Type|Payload (4Bfix)|
-// +-------+-------+---------+----+---------------+
 
 
 #include <stdio.h>
@@ -73,16 +68,15 @@ Note:
 
 #define DEBUG		1
 
-
-// uncomment to enable automatic mss fix
-#define CHANGEMSS   1
+// uncomment the following line to enable automatic mss fix
+#define FIXMSS   1
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE	2048
 #define MAXFD   		64
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
-int             daemon_proc;            /* set nonzero by daemon_init() */
+int daemon_proc;            /* set nonzero by daemon_init() */
 
 struct _EtherHeader {
   uint16_t destMAC1;
@@ -96,11 +90,9 @@ struct _EtherHeader {
 
 typedef struct _EtherHeader EtherPacket;
 
-static void
-err_doit(int errnoflag, int level, const char *fmt, va_list ap)
-{
-	int	errno_save, n;
-	char	buf[MAXLEN];
+void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
+{	int	errno_save, n;
+	char buf[MAXLEN];
 
 	errno_save = errno;		/* value caller might want printed */
 	vsnprintf(buf, sizeof(buf), fmt, ap);	/* this is safe */
@@ -118,43 +110,34 @@ err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 	}
 	return;
 }
-void
-err_msg(const char *fmt, ...)
-{
-	va_list		ap;
+
+void err_msg(const char *fmt, ...)
+{ 	va_list	ap;
 	va_start(ap, fmt);
 	err_doit(0, LOG_INFO, fmt, ap);
 	va_end(ap);
 	return;
 }
 
-void
-err_quit(const char *fmt, ...)
-{
-	va_list		ap;
+void err_quit(const char *fmt, ...)
+{ 	va_list ap;
 	va_start(ap, fmt);
 	err_doit(0, LOG_ERR, fmt, ap);
 	va_end(ap);
 	exit(1);
 }
 
-void
-err_sys(const char *fmt, ...)
-{
-	va_list		ap;
-
+void err_sys(const char *fmt, ...)
+{ 	va_list	ap;
 	va_start(ap, fmt);
 	err_doit(1, LOG_ERR, fmt, ap);
 	va_end(ap);
 	exit(1);
 }
 
-
-void
-daemon_init(const char *pname, int facility)
-{
-	int    	i;
-	pid_t   pid;
+void daemon_init(const char *pname, int facility)
+{ 	int i;
+	pid_t pid;
 	if ( (pid = fork()) != 0)
 		exit(0);                        /* parent terminates */
 
@@ -179,9 +162,8 @@ daemon_init(const char *pname, int facility)
 int transfamily = 0;
 
 int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
-{
-	int	sockfd, n;
-	int	on=1;
+{ 	int	sockfd, n;
+	int	on = 1;
 	struct addrinfo hints, *res, *ressave;
 
 	bzero(&hints, sizeof(struct addrinfo));
@@ -198,10 +180,9 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 		if (sockfd < 0)
 			continue;               /* error, try next one */
-		setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&on,1);
+		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, 1);
 		if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
 			break;                  /* success */
-
         close(sockfd);          /* bind error, close and try next one */
    } while ( (res = res->ai_next) != NULL);
 
@@ -217,8 +198,7 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 }
 
 int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
-{
-	int	sockfd, n;
+{ 	int	sockfd, n;
 	struct addrinfo hints, *res, *ressave;
 	sockfd = udp_server(lhost,lserv,NULL);
 	bzero(&hints, sizeof(struct addrinfo));
@@ -242,13 +222,11 @@ int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
 }
 
 
-
 /**
  * Open a rawsocket for the network interface
  */
-int32_t open_socket(char *ifname, int32_t *rifindex) {
-  	unsigned char buf[MAX_PACKET_SIZE];
-  	int32_t i;
+int32_t open_socket(char *ifname, int32_t *rifindex) 
+{ 	unsigned char buf[MAX_PACKET_SIZE];
   	int32_t ifindex;
   	struct ifreq ifr;
   	struct sockaddr_ll sll;
@@ -284,6 +262,7 @@ int32_t open_socket(char *ifname, int32_t *rifindex) {
    	* raw-socket receives packets from all interfaces
    	* when the socket is not bound to an interface
    	*/
+  	int32_t i;
   	do {
     	fd_set fds;
     	struct timeval t;
@@ -318,7 +297,7 @@ void printPacket(EtherPacket *packet, ssize_t packetSize, char *message)
 }
 
 // function from http://www.bloof.de/tcp_checksumming, thanks to crunsh
-u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_addr[], u_int16_t buff[])
+u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[], u_int16_t dest_addr[], u_int16_t buff[])
 {
     u_int16_t prot_tcp = 6;
     u_int32_t sum = 0 ;
@@ -334,7 +313,7 @@ u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_ad
  
     /* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
     if(nleft>0)
-             sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
+		sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
  
     /* add the pseudo header */
     sum += src_addr[0];
@@ -354,7 +333,6 @@ u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_ad
     return ((u_int16_t) sum);
 }
 
-
 u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_addr[], u_int16_t buff[])
 {
     u_int16_t prot_tcp = 6;
@@ -371,7 +349,7 @@ u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest
  
     /* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
     if(nleft>0)
-             sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
+		sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
  
     /* add the pseudo header */
 	int i;
@@ -400,35 +378,32 @@ static unsigned int optlen(const u_int8_t *opt, unsigned int offset)
 		return opt[offset+1];
 }
 
-void fix_mss(char *buf, int len)
+void fix_mss(u_int8_t *buf, int len)
 {
 	u_int8_t * packet;
 	int i;
-
 	int VLANdot1Q=0;
 
 	if( len < 54 ) return;
 	packet = buf +12; // skip ethernet dst & src addr
 	len -=12;
 	
-	if( (packet[0] == 0x81) && (packet[1] == 0x00) ) { // skip 802.1Q tag
+	if( (packet[0] == 0x81) && (packet[1] == 0x00) ) { // skip 802.1Q tag 0x8100
 		packet +=4;
 		len -=4;
 		VLANdot1Q=1;
 	}
-	if( (packet[0] == 0x08) && (packet[1] == 0x00) ) { // IPv4 packet 
+	if( (packet[0] == 0x08) && (packet[1] == 0x00) ) { // IPv4 packet 0x0800
 		packet +=2;
 		len -=2;
 	
 		struct iphdr *ip = (struct iphdr *) packet;
-
 		if( ip->version != 4 ) return; // check ipv4
 		if( ntohs(ip->frag_off) & 0x1fff ) return;  // not the first fragment
 		if( ip->protocol != IPPROTO_TCP ) return; // not tcp packet
 		if( ntohs(ip->tot_len) > len ) return;  // tot_len should < len 
 
 		struct tcphdr *tcph = (struct tcphdr*) (packet + ip->ihl *4);
-
 		if( !tcph->syn ) return;	
 		if(DEBUG) printf("fixmss ipv4 tcp syn\n");
 		u_int8_t * opt = (u_int8_t *)tcph;
@@ -458,18 +433,16 @@ void fix_mss(char *buf, int len)
  			}
 		}
 		return;
-	} else if( (packet[0] == 0x86) && (packet[1] == 0xdd) ) { // IPv6 packet 
+	} else if( (packet[0] == 0x86) && (packet[1] == 0xdd) ) { // IPv6 packet, 0x86dd
 		packet +=2;
 		len -=2;
 
 		struct ip6_hdr *ip6 = (struct ip6_hdr *) packet;
-
 		if( (ip6->ip6_vfc&0xf0) != 0x60 ) return; // check ipv6
 		if( ip6->ip6_nxt!= IPPROTO_TCP ) return; // not tcp packet
 		if( ntohs(ip6->ip6_plen) > len ) return;  // tot_len should < len 
 
 		struct tcphdr *tcph = (struct tcphdr*) (packet + 40);
-
 		if( !tcph->syn ) return;	
 		if(DEBUG) printf("fixmss ipv6 tcp syn\n");
 		u_int8_t * opt = (u_int8_t *)tcph;
@@ -512,22 +485,21 @@ int main(int argc, char *argv[])
   		exit(1);
   	}
 
-if (!DEBUG) {
-	daemon_init("EthUDP",LOG_DAEMON);
-	while(1) {
-   		int pid;
+	if (!DEBUG) {
+		daemon_init("EthUDP",LOG_DAEMON);
+		while(1) {
+   			int pid;
       		pid=fork();
       		if(pid==0) // child do the job
-			break;
+				break;
       		else if(pid==-1) // error
       			exit(0);
       		else
       			wait(NULL); // parent wait for child
       		sleep(2);  // wait 2 second, and rerun
     	}
-
-}
-	fdudp = udp_xconnect(argv[1],argv[2],argv[3],argv[4]);
+	}
+	fdudp = udp_xconnect(argv[1], argv[2], argv[3], argv[4]);
 	fdraw = open_socket(argv[5], &ifindex);
   	
 // Set non-blocking mode:
@@ -536,11 +508,10 @@ if (!DEBUG) {
  	flags = fcntl(fdudp, F_GETFL, 0);
   	fcntl(fdudp, F_SETFL, O_NONBLOCK | flags);
 
-
-	while(1){
-  		char buf[MAX_PACKET_SIZE];
+	while (1) {
+  		u_int8_t buf[MAX_PACKET_SIZE];
   		fd_set fds;
-		int l;
+		int len;
 
 		FD_ZERO(&fds);
 		FD_SET(fdudp, &fds);
@@ -549,34 +520,31 @@ if (!DEBUG) {
 		select(max(fdudp, fdraw)+1, &fds, NULL, NULL, NULL);
 
 		if( FD_ISSET(fdraw, &fds) ) {  // read from eth rawsocket
-			l = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
-			if(l<=0) continue;
-#ifdef CHANGEMSS
-			fix_mss(buf,l);
+			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
+			if( len <= 0 ) break;
+#ifdef FIXMSS
+			fix_mss(buf, len);
 #endif
-			if(DEBUG) {
-   	   			EtherPacket *packet = (EtherPacket*) buf;
-     			printPacket(packet, l , "Received from rawsocket:");
-			}
-			l = write(fdudp,buf,l);
+			if(DEBUG) 
+     			printPacket( (EtherPacket*) buf, len , "Received from rawsocket:");
+			write(fdudp, buf, len);
 		}  
 		if( FD_ISSET(fdudp, &fds) ) {  // read from remote udp
-			l = read(fdudp,buf,sizeof(buf));
-			if(l<=0) continue;
-#ifdef CHANGEMSS
-			fix_mss(buf,l);
+			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
+			if( len <= 0 ) break;
+#ifdef FIXMSS
+			fix_mss(buf, len);
 #endif
-			if(DEBUG) {
-   	   			EtherPacket *packet = (EtherPacket*) buf;
-   				printPacket(packet, l , "Received from udpsocket:");
-			}
+			if(DEBUG) 
+   				printPacket( (EtherPacket*) buf, len , "Received from udpsocket:");
   
 			struct sockaddr_ll sll;
   			memset(&sll, 0, sizeof(sll));
   			sll.sll_family = AF_PACKET;
   			sll.sll_protocol = htons(ETH_P_ALL);	// Ethernet type = Trans. Ether Bridging
   			sll.sll_ifindex = ifindex;
-  			l = sendto(fdraw, buf, l, 0, (struct sockaddr *)&sll, sizeof(sll));
+  			sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
 		}
 	}
+	return 0;
 }
