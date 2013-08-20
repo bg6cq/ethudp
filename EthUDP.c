@@ -65,7 +65,9 @@ how it works:
 #include <stdarg.h>
 #include <errno.h>
 
-#define DEBUG		1
+#define DEBUG		0
+
+#define CHANGEMSS   1
 
 #define MAXLEN 2048
 #define MAX_PACKET_SIZE	2048
@@ -168,8 +170,7 @@ daemon_init(const char *pname, int facility)
         openlog(pname, LOG_PID, facility);
 }
 
-int
-udp_server(const char *host, const char *serv, socklen_t *addrlenp)
+int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 {
         int	sockfd, n;
     	int	on=1;
@@ -206,7 +207,7 @@ udp_server(const char *host, const char *serv, socklen_t *addrlenp)
         return(sockfd);
 }
 
-udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
+int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
 {
         int	sockfd, n;
     	int    	on=1;
@@ -237,77 +238,68 @@ udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
 
 
 /**
- * Open a socket for the network interface
+ * Open a rawsocket for the network interface
  */
 int32_t open_socket(char *ifname, int32_t *rifindex) {
-  unsigned char buf[MAX_PACKET_SIZE];
-  int32_t i;
-  int32_t ifindex;
-  struct ifreq ifr;
-  struct sockaddr_ll sll;
+  	unsigned char buf[MAX_PACKET_SIZE];
+  	int32_t i;
+  	int32_t ifindex;
+  	struct ifreq ifr;
+  	struct sockaddr_ll sll;
 
-  int32_t fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-  if (fd == -1) {
-    printf("%s - ", ifname);
-    perror("socket");
-    _exit(1);
-  };
+  	int32_t fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+  	if (fd == -1) 
+    	err_sys("socket %s - ", ifname);
 
-  // get interface index
-  memset(&ifr, 0, sizeof(ifr));
-  strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-  if (ioctl(fd, SIOCGIFINDEX, &ifr) == -1) {
-    printf("%s - ", ifname);
-    perror("SIOCGIFINDEX");
-    _exit(1);
-  };
-  ifindex = ifr.ifr_ifindex;
-  *rifindex = ifindex;
+  	// get interface index
+  	memset(&ifr, 0, sizeof(ifr));
+  	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+  	if (ioctl(fd, SIOCGIFINDEX, &ifr) == -1) 
+    	err_sys("SIOCGIFINDEX %s - ", ifname);
+  	ifindex = ifr.ifr_ifindex;
+  	*rifindex = ifindex;
 
-  // set promiscuous mode
-  memset(&ifr, 0, sizeof(ifr));
-  strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-  ioctl(fd, SIOCGIFFLAGS, &ifr);
-  ifr.ifr_flags |= IFF_PROMISC;
-  ioctl(fd, SIOCSIFFLAGS, &ifr);
+  	// set promiscuous mode
+  	memset(&ifr, 0, sizeof(ifr));
+  	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+  	ioctl(fd, SIOCGIFFLAGS, &ifr);
+  	ifr.ifr_flags |= IFF_PROMISC;
+  	ioctl(fd, SIOCSIFFLAGS, &ifr);
 
-  memset(&sll, 0xff, sizeof(sll));
-  sll.sll_family = AF_PACKET;
-  sll.sll_protocol = htons(ETH_P_ALL);
-  sll.sll_ifindex = ifindex;
-  if (bind(fd, (struct sockaddr *)&sll, sizeof(sll)) == -1) {
-    printf("%s - ", ifname);
-    perror("bind");
-    _exit(1);
-  };
+  	memset(&sll, 0xff, sizeof(sll));
+  	sll.sll_family = AF_PACKET;
+  	sll.sll_protocol = htons(ETH_P_ALL);
+  	sll.sll_ifindex = ifindex;
+  	if (bind(fd, (struct sockaddr *)&sll, sizeof(sll)) == -1) 
+    	err_sys("bind %s - ", ifname);
 
-  /* flush all received packets. 
-   *
-   * raw-socket receives packets from all interfaces
-   * when the socket is not bound to an interface
-   */
-  do {
-    fd_set fds;
-    struct timeval t;
-    FD_ZERO(&fds);	
-    FD_SET(fd, &fds);
-    memset(&t, 0, sizeof(t));
-    i = select(FD_SETSIZE, &fds, NULL, NULL, &t);
-    if (i > 0) {
-      recv(fd, buf, i, 0);
-    };
-    if (DEBUG) printf("interface %d flushed\n", ifindex);
-  } while (i);
+  	/* flush all received packets. 
+   	*
+   	* raw-socket receives packets from all interfaces
+   	* when the socket is not bound to an interface
+   	*/
+  	do {
+    	fd_set fds;
+    	struct timeval t;
+    	FD_ZERO(&fds);	
+    	FD_SET(fd, &fds);
+    	memset(&t, 0, sizeof(t));
+    	i = select(FD_SETSIZE, &fds, NULL, NULL, &t);
+    	if (i > 0) {
+      		recv(fd, buf, i, 0);
+    	};
+    	if (DEBUG) printf("interface %d flushed\n", ifindex);
+  	} while (i);
 
-  if (DEBUG) printf("%s opened (fd=%d interface=%d)\n", ifname, fd, ifindex);
+  	if (DEBUG) printf("%s opened (fd=%d interface=%d)\n", ifname, fd, ifindex);
 
-  return fd;
+  	return fd;
 }
 
 
 void printPacket(EtherPacket *packet, ssize_t packetSize, char *message) 
 {
-        if ( ntohl(packet->VLANTag) >> 16 == 0x8100 )  // VLAN tag
+        if ( (ntohl(packet->VLANTag) >> 16) == 0x8100 )  // VLAN tag
                 printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
                         message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
                         ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
@@ -320,16 +312,12 @@ void printPacket(EtherPacket *packet, ssize_t packetSize, char *message)
 }
 
 // function from http://www.bloof.de/tcp_checksumming, thanks to crunsh
-unsigned short tcp_sum_calc(unsigned short len_tcp, unsigned short src_addr[],unsigned short dest_addr[], unsigned short buff[])
+u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest_addr[], u_int16_t buff[])
 {
-    unsigned char prot_tcp=6;
-    unsigned long sum;
-    int nleft;
-    unsigned short *w;
- 
-    sum = 0;
-    nleft = len_tcp;
-    w=buff;
+    u_int16_t prot_tcp = 6;
+    u_int32_t sum = 0 ;
+    int nleft = len_tcp;
+    u_int16_t *w = buff;
  
     /* calculate the checksum for the tcp header and payload */
     while(nleft > 1)
@@ -340,10 +328,7 @@ unsigned short tcp_sum_calc(unsigned short len_tcp, unsigned short src_addr[],un
  
     /* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
     if(nleft>0)
-    {
-    	/* sum += *w&0xFF; */
              sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
-    }
  
     /* add the pseudo header */
     sum += src_addr[0];
@@ -360,7 +345,7 @@ unsigned short tcp_sum_calc(unsigned short len_tcp, unsigned short src_addr[],un
     // Take the one's complement of sum
     sum = ~sum;
  
-    return ((unsigned short) sum);
+    return ((u_int16_t) sum);
 }
 
 static unsigned int optlen(const u_int8_t *opt, unsigned int offset)
@@ -382,11 +367,10 @@ void fix_mss(char *buf, int len)
 	if( len < 54 ) return;
 	packet = buf +12; // skip ethernet dst & src addr
 	len -=12;
-
 	
 	if( (packet[0] == 0x81) && (packet[1] == 0x00) ) { // skip 802.1Q tag
-		packet +=2;
-		len -=2;
+		packet +=4;
+		len -=4;
 	}
 	if( (packet[0] == 0x08) && (packet[1] == 0x00) ) { // IP packet 
 		packet +=2;
@@ -395,10 +379,10 @@ void fix_mss(char *buf, int len)
 	
 	struct iphdr *ip = (struct iphdr *) packet;
 
-	if( ip->version !=4 ) return; // only support ipv4
+	if( ip->version != 4 ) return; // only support ipv4
 	if( ntohs(ip->frag_off) & 0x1fff ) return;  // not the first fragment
 	if( ip->protocol != IPPROTO_TCP ) return; // not tcp packet
-	if( ntohs(ip->tot_len) > len ) return;  // tot_len ??
+	if( ntohs(ip->tot_len) > len ) return;  // tot_len should < len 
 
 	struct tcphdr *tcph = (struct tcphdr*) (packet + ip->ihl *4);
 
@@ -423,7 +407,7 @@ void fix_mss(char *buf, int len)
 			opt[i+3] = newmss & 0x00ff;
 		
 			tcph->check = 0; /* Checksum field has to be set to 0 before checksumming */
-			tcph->check = (unsigned short) tcp_sum_calc((unsigned short) (ntohs(ip->tot_len) - ip->ihl *4), (unsigned short *) &ip->saddr, (unsigned short *) &ip->daddr, (unsigned short *) &tcph); 
+			tcph->check = (u_int16_t) tcp_sum_calc((u_int16_t) (ntohs(ip->tot_len) - ip->ihl *4), (u_int16_t*) &ip->saddr, (u_int16_t*) &ip->daddr, (u_int16_t *) tcph); 
 			return;
  		}
 	}
@@ -471,7 +455,7 @@ if (!DEBUG) {
 
 		FD_ZERO(&fds);
 		FD_SET(fdudp, &fds);
-		FD_SET(fdraw , &fds);
+		FD_SET(fdraw, &fds);
 			
 		select(max(fdudp, fdraw)+1, &fds, NULL, NULL, NULL);
 
@@ -479,7 +463,9 @@ if (!DEBUG) {
 			l = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
 			if(DEBUG) printf("%d bytes from eth rawsocket\n",l);
 			if(l<=0) continue;
+#ifdef CHANGEMSS
 			fix_mss(buf,l);
+#endif
 			if(DEBUG) {
    	   			EtherPacket *packet = (EtherPacket*) buf;
       				printPacket(packet, l , "Received:");
@@ -491,7 +477,9 @@ if (!DEBUG) {
 			l = read(fdudp,buf,sizeof(buf));
 			if(DEBUG) printf("%d bytes from udp socket\n",l);
 			if(l<=0) continue;
+#ifdef CHANGEMSS
 			fix_mss(buf,l);
+#endif
 			if(DEBUG) {
    	   			EtherPacket *packet = (EtherPacket*) buf;
       				printPacket(packet, l , "Received:");
