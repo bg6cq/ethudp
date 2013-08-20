@@ -1,2 +1,2 @@
 EthUDP:EthUDP.c
-	gcc -g -o EthUDP EthUDP.c
+	gcc -g -Wall -o EthUDP EthUDP.c

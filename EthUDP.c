@@ -49,18 +49,19 @@ how it works:
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <net/if.h> 
-#include <sys/ioctl.h>
 #include <syslog.h> 
 #include <signal.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <net/if.h> 
 #include <linux/if_packet.h>
 #include <linux/if_ether.h> 
 #include <netinet/ip.h> 
 #include <netinet/tcp.h> 
-#include <elf.h>
 #include <netdb.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -189,7 +190,7 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
                 sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
                 if (sockfd < 0)
                         continue;               /* error, try next one */
-        	setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&on,1);
+        		setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,&on,1);
                 if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
                         break;                  /* success */
 
@@ -210,9 +211,8 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
 {
         int	sockfd, n;
-    	int    	on=1;
         struct addrinfo hints, *res, *ressave;
-        sockfd=udp_server(lhost,lserv,NULL);
+        sockfd = udp_server(lhost,lserv,NULL);
         bzero(&hints, sizeof(struct addrinfo));
         hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_DGRAM;
