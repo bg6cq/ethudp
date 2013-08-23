@@ -69,7 +69,7 @@ Note:
 #define DEBUG		1
 
 // uncomment the following line to enable automatic mss fix
-#define FIXMSS   1
+//#define FIXMSS   1
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE	2048
@@ -521,29 +521,31 @@ int main(int argc, char *argv[])
 
 		if( FD_ISSET(fdraw, &fds) ) {  // read from eth rawsocket
 			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
-			if( len <= 0 ) break;
+			if( len > 0 ) {
 #ifdef FIXMSS
-			fix_mss(buf, len);
+				fix_mss(buf, len);
 #endif
-			if(DEBUG) 
-     			printPacket( (EtherPacket*) buf, len , "Received from rawsocket:");
-			write(fdudp, buf, len);
+				if(DEBUG) 
+     				printPacket( (EtherPacket*) buf, len , "Received from rawsocket:");
+				write(fdudp, buf, len);
+			}
 		}  
 		if( FD_ISSET(fdudp, &fds) ) {  // read from remote udp
 			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
-			if( len <= 0 ) break;
+			if( len > 0 ) { 
 #ifdef FIXMSS
-			fix_mss(buf, len);
+				fix_mss(buf, len);
 #endif
-			if(DEBUG) 
-   				printPacket( (EtherPacket*) buf, len , "Received from udpsocket:");
+				if(DEBUG) 
+   					printPacket( (EtherPacket*) buf, len , "Received from udpsocket:");
   
-			struct sockaddr_ll sll;
-  			memset(&sll, 0, sizeof(sll));
-  			sll.sll_family = AF_PACKET;
-  			sll.sll_protocol = htons(ETH_P_ALL);	// Ethernet type = Trans. Ether Bridging
-  			sll.sll_ifindex = ifindex;
-  			sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
+				struct sockaddr_ll sll;
+  				memset(&sll, 0, sizeof(sll));
+  				sll.sll_family = AF_PACKET;
+  				sll.sll_protocol = htons(ETH_P_ALL);	// Ethernet type = Trans. Ether Bridging
+  				sll.sll_ifindex = ifindex;
+  				sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
+			}
 		}
 	}
 	return 0;
