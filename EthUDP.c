@@ -539,7 +539,7 @@ int main(int argc, char *argv[])
 				fix_mss(buf, len);
 #endif
 				if(DEBUG) 
-     				printPacket( (EtherPacket*) buf, len , "from remote rawsocket:");
+     				printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
 				write(fdudp, buf, len);
 			}
 		}  
@@ -550,7 +550,7 @@ int main(int argc, char *argv[])
 				fix_mss(buf, len);
 #endif
 				if(DEBUG) 
-   					printPacket( (EtherPacket*) buf, len , "from local  udpsocket:");
+   					printPacket( (EtherPacket*) buf, len , "from remote udpsocket:");
   
 				struct sockaddr_ll sll;
   				memset(&sll, 0, sizeof(sll));
