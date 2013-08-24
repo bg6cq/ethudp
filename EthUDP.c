@@ -56,6 +56,7 @@ Note:
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <net/if.h> 
 #include <linux/if_packet.h>
 #include <linux/if_ether.h> 
@@ -284,6 +285,16 @@ int32_t open_socket(char *ifname, int32_t *rifindex)
 
 void printPacket(EtherPacket *packet, ssize_t packetSize, char *message) 
 {
+	struct timeval  tv;
+	struct timezone tz;
+	struct tm      *tm;
+ 
+	gettimeofday(&tv, &tz);
+	tm = localtime(&tv.tv_sec);
+ 
+	printf("%02d%02d %02d:%02d:%02d.%06ld ", tm->tm_mon + 1, tm->tm_mday, 
+		tm->tm_hour, tm->tm_min, tm->tm_sec, tv.tv_usec);
+
 	if ( (ntohl(packet->VLANTag) >> 16) == 0x8100 )  // VLAN tag
 		printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
 			message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
@@ -528,7 +539,7 @@ int main(int argc, char *argv[])
 				fix_mss(buf, len);
 #endif
 				if(DEBUG) 
-     				printPacket( (EtherPacket*) buf, len , "Received from rawsocket:");
+     				printPacket( (EtherPacket*) buf, len , "from remote rawsocket:");
 				write(fdudp, buf, len);
 			}
 		}  
@@ -539,7 +550,7 @@ int main(int argc, char *argv[])
 				fix_mss(buf, len);
 #endif
 				if(DEBUG) 
-   					printPacket( (EtherPacket*) buf, len , "Received from udpsocket:");
+   					printPacket( (EtherPacket*) buf, len , "from local  udpsocket:");
   
 				struct sockaddr_ll sll;
   				memset(&sll, 0, sizeof(sll));
