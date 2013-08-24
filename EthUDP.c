@@ -481,9 +481,11 @@ int main(int argc, char *argv[])
 	int fdudp, fdraw;
 
   	if(argc < 6) {
-  		printf("Usage: ./EthUDP localip localport remoteip remoteport eth?");
+  		printf("Usage: ./EthUDP localip localport remoteip remoteport eth?\n");
   		exit(1);
   	}
+
+	setbuf(stdout,NULL);
 
 	if (!DEBUG) {
 		daemon_init("EthUDP",LOG_DAEMON);
