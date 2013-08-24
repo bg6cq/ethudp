@@ -279,6 +279,7 @@ int32_t open_socket(char *ifname, int32_t *rifindex)
 
   	if (DEBUG) printf("%s opened (fd=%d interface=%d)\n", ifname, fd, ifindex);
 
+	if (DEBUG) fflush(stdout);
   	return fd;
 }
 
@@ -305,6 +306,7 @@ void printPacket(EtherPacket *packet, ssize_t packetSize, char *message)
 			message, ntohl(packet->VLANTag) >> 16,
 			ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
 			ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+	fflush(stdout);
 }
 
 // function from http://www.bloof.de/tcp_checksumming, thanks to crunsh
@@ -495,8 +497,6 @@ int main(int argc, char *argv[])
   		printf("Usage: ./EthUDP localip localport remoteip remoteport eth?\n");
   		exit(1);
   	}
-
-	setbuf(stdout,NULL);
 
 	if (!DEBUG) {
 		daemon_init("EthUDP",LOG_DAEMON);
