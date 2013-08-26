@@ -1,47 +1,49 @@
 /* EthUDP: used to create transparent bridge over ipv4/ipv6 network
-	
 	  by james@ustc.edu.cn 2009.04.02
 
-     |                             |
-     |                             |
+          |-------Internet---------|
+          |                        |
      |    |                        |    |
-     |    |                        |    |
- eth0|    |eth1                eth0|    |eth1
+     |    |IPA                  IPB|    |
+ eth1|    |eth0                eth0|    |eth1
 +----+----+----+              +----+----+----+
 |   server A   |              |   server B   |
 +--------------+              +--------------+
 
-Each server connects Internet via interface eth0.
-server A IP is IPA
-server B IP is IPB
+Each server connects Internet via interface eth0, IP is IPA & IPB.
 
-run following command in server A
+On server A, run following command
 ip link set eth1 up
 ifconfig eth1 mtu 1508
 ./EthUDP IPA 6000 IPB 6000 eth1
 
-
-run following command in server B
+On server B, run following command
 ip link set eth1 up
 ifconfig eth1 mtu 1508
 ./EthUDP IPB 6000 IPA 6000 eth1
 
-will bridge eth1 of two host via internet UDP port 6000
+will bridge eth1 of two hosts via internet using UDP port 6000
 
 how it works:
 1. open raw socket for eth1
 2. open udp socket to remote host
-3. if read packet from raw socket, send to udp socket
-4. if read packet from udp socket, send to raw socket
-
+3. read packet from raw socket, send to udp socket
+4. read packet from udp socket, send to raw socket
 
 Note:
-
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
-
 */	
 
+// uncomment the following line to enable automatic tcp mss fix
+//#define FIXMSS   1
+
+// comment the following line to disable DEBUG
+//#define DEBUG		1
+
+#ifdef DEBUG
+#define PRINTPKT	1
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,11 +68,6 @@ Note:
 #include <netdb.h>
 #include <stdarg.h>
 #include <errno.h>
-
-#define DEBUG		1
-
-// uncomment the following line to enable automatic mss fix
-//#define FIXMSS   1
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE	2048
@@ -274,12 +271,18 @@ int32_t open_socket(char *ifname, int32_t *rifindex)
     	if (i > 0) {
       		recv(fd, buf, i, 0);
     	};
-    	if (DEBUG) printf("interface %d flushed\n", ifindex);
+
+#ifdef DEBUG
+		printf("interface %d flushed\n", ifindex);
+#endif
+
   	} while (i);
 
-  	if (DEBUG) printf("%s opened (fd=%d interface=%d)\n", ifname, fd, ifindex);
+#ifdef DEBUG
+  	printf("%s opened (fd=%d interface=%d)\n", ifname, fd, ifindex);
+	fflush(stdout);
+#endif
 
-	if (DEBUG) fflush(stdout);
   	return fd;
 }
 
@@ -418,7 +421,11 @@ void fix_mss(u_int8_t *buf, int len)
 
 		struct tcphdr *tcph = (struct tcphdr*) (packet + ip->ihl *4);
 		if( !tcph->syn ) return;	
-		if(DEBUG) printf("fixmss ipv4 tcp syn\n");
+
+#ifdef DEBUG
+		printf("fixmss ipv4 tcp syn\n");
+#endif
+
 		u_int8_t * opt = (u_int8_t *)tcph;
 		for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
 			if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
@@ -436,7 +443,9 @@ void fix_mss(u_int8_t *buf, int len)
 				*/
 				if (oldmss <= newmss)
 					return;
-				if(DEBUG) printf("change inner v4 tcp mss from %d to %d\n",oldmss,newmss);
+#ifdef DEBUG
+				printf("change inner v4 tcp mss from %d to %d\n",oldmss,newmss);
+#endif
 				opt[i+2] = (newmss & 0xff00) >> 8;
 				opt[i+3] = newmss & 0x00ff;
 			
@@ -457,7 +466,9 @@ void fix_mss(u_int8_t *buf, int len)
 
 		struct tcphdr *tcph = (struct tcphdr*) (packet + 40);
 		if( !tcph->syn ) return;	
-		if(DEBUG) printf("fixmss ipv6 tcp syn\n");
+#ifdef DEBUG
+		printf("fixmss ipv6 tcp syn\n");
+#endif
 		u_int8_t * opt = (u_int8_t *)tcph;
 		for (i = sizeof(struct tcphdr); i < tcph->doff*4; i += optlen(opt, i)) {
 			if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
@@ -475,7 +486,10 @@ void fix_mss(u_int8_t *buf, int len)
 				*/
 				if (oldmss <= newmss)
 					return;
-				if(DEBUG) printf("change inner v6 tcp mss from %d to %d\n",oldmss,newmss);
+#ifdef DEBUG
+				printf("change inner v6 tcp mss from %d to %d\n",oldmss,newmss);
+#endif
+
 				opt[i+2] = (newmss & 0xff00) >> 8;
 				opt[i+3] = newmss & 0x00ff;
 			
@@ -498,20 +512,21 @@ int main(int argc, char *argv[])
   		exit(1);
   	}
 
-	if (!DEBUG) {
-		daemon_init("EthUDP",LOG_DAEMON);
-		while(1) {
-   			int pid;
-      		pid=fork();
-      		if(pid==0) // child do the job
-				break;
-      		else if(pid==-1) // error
-      			exit(0);
-      		else
-      			wait(NULL); // parent wait for child
-      		sleep(2);  // wait 2 second, and rerun
-    	}
-	}
+#ifndef DEBUG
+	daemon_init("EthUDP",LOG_DAEMON);
+	while(1) {
+   		int pid;
+   		pid=fork();
+   		if(pid==0) // child do the job
+			break;
+   		else if(pid==-1) // error
+   			exit(0);
+   		else
+   			wait(NULL); // parent wait for child
+   		sleep(2);  // wait 2 second, and rerun
+   	}
+#endif
+
 	fdudp = udp_xconnect(argv[1], argv[2], argv[3], argv[4]);
 	fdraw = open_socket(argv[5], &ifindex);
   	
@@ -538,8 +553,9 @@ int main(int argc, char *argv[])
 #ifdef FIXMSS
 				fix_mss(buf, len);
 #endif
-				if(DEBUG) 
-     				printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
+#ifdef PRINTPKT
+     			printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
+#endif
 				write(fdudp, buf, len);
 			}
 		}  
@@ -549,13 +565,14 @@ int main(int argc, char *argv[])
 #ifdef FIXMSS
 				fix_mss(buf, len);
 #endif
-				if(DEBUG) 
-   					printPacket( (EtherPacket*) buf, len , "from remote udpsocket:");
+#ifdef PRINTPKT
+   				printPacket( (EtherPacket*) buf, len , "from remote udpsocket:");
+#endif
   
 				struct sockaddr_ll sll;
   				memset(&sll, 0, sizeof(sll));
   				sll.sll_family = AF_PACKET;
-  				sll.sll_protocol = htons(ETH_P_ALL);	// Ethernet type = Trans. Ether Bridging
+  				sll.sll_protocol = htons(ETH_P_ALL);
   				sll.sll_ifindex = ifindex;
   				sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
 			}
