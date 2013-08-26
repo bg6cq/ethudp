@@ -39,7 +39,7 @@ Note:
 //#define FIXMSS   1
 
 // comment the following line to disable DEBUG
-//#define DEBUG		1
+#define DEBUG		1
 
 #ifdef DEBUG
 #define PRINTPKT	1
