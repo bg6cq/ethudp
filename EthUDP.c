@@ -39,7 +39,7 @@ Note:
 //#define FIXMSS   1
 
 // comment the following line to disable DEBUG
-#define DEBUG		1
+//#define DEBUG		1
 
 #ifdef DEBUG
 #define PRINTPKT	1
@@ -68,6 +68,9 @@ Note:
 #include <netdb.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <pthread.h>
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE	2048
@@ -87,6 +90,12 @@ struct _EtherHeader {
 } __attribute__((packed));
 
 typedef struct _EtherHeader EtherPacket;
+
+
+volatile struct sockaddr_in remote_addr;
+int32_t ifindex;
+int fdudp, fdraw;
+int nat = 0;
 
 void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 {	int	errno_save, n;
@@ -198,7 +207,9 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
 { 	int	sockfd, n;
 	struct addrinfo hints, *res, *ressave;
+
 	sockfd = udp_server(lhost,lserv,NULL);
+
 	bzero(&hints, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
@@ -206,6 +217,16 @@ int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
    	if ( (n = getaddrinfo(rhost, rserv, &hints, &res)) != 0) 
    		err_quit("udp_xconnect error for %s, %s", rhost, rserv);
 	ressave = res;
+
+	if ( ((struct sockaddr_in*) res->ai_addr)->sin_port == 0 ) {
+#ifdef DEBUG
+		printf("port==0, is nat\n");
+#endif
+		nat = 1;
+		memcpy((void *)&remote_addr, res->ai_addr, res->ai_addrlen);
+		return sockfd;
+	}
+
    	do {
    		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
        		break;          /* success */
@@ -303,12 +324,12 @@ void printPacket(EtherPacket *packet, ssize_t packetSize, char *message)
 		printf("%s #%04x (VLAN %d) from %04x%08x to %04x%08x, len=%d\n",
 			message, ntohs(packet->type), ntohl(packet->VLANTag) & 0xFFF,
 			ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
-			ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+			ntohs(packet->destMAC1), ntohl(packet->destMAC2), (int)packetSize);
 	else
 		printf("%s #%04x (no VLAN) from %04x%08x to %04x%08x, len=%d\n",
 			message, ntohl(packet->VLANTag) >> 16,
 			ntohs(packet->srcMAC1), ntohl(packet->srcMAC2),
-			ntohs(packet->destMAC1), ntohl(packet->destMAC2), packetSize);
+			ntohs(packet->destMAC1), ntohl(packet->destMAC2), (int)packetSize);
 	fflush(stdout);
 }
 
@@ -502,11 +523,75 @@ void fix_mss(u_int8_t *buf, int len)
 	} else return; // not IP packet
 }
 
+
+void process_raw_to_udp( void)
+{
+  	u_int8_t buf[MAX_PACKET_SIZE];
+	int len;
+
+	while (1) { 	// read from eth rawsocket
+		len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
+		if( len <= 0 ) continue;
+#ifdef FIXMSS
+		fix_mss(buf, len);
+#endif
+#ifdef PRINTPKT
+     		printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
+#endif
+		if ( nat ) {
+#ifdef DEBUG
+			printf("nat mode: send to port %d\n",ntohs(remote_addr.sin_port));
+#endif
+			if ( remote_addr.sin_port )
+				sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
+		} else
+			write(fdudp, buf, len);
+	}
+}
+
+void process_udp_to_raw( void)
+{
+  	u_int8_t buf[MAX_PACKET_SIZE];
+	int len;
+
+	while (1) { 	// read from remote udp
+		if ( nat ) {
+			struct sockaddr_in r;
+			socklen_t sock_len = sizeof(struct sockaddr_in);
+			len = recvfrom (fdudp, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&r, &sock_len );
+#ifdef DEBUG
+			printf("nat mode: len %d recv from host %s\n",len,inet_ntoa(r.sin_addr));
+			printf("remote_host is %s\n",inet_ntoa(remote_addr.sin_addr));
+#endif
+			if ( len <= 0 ) continue;
+			if ( memcmp( (void*)&remote_addr.sin_addr, &r.sin_addr , 4 )==0) {
+#ifdef DEBUG
+				printf("nat mode: recv from port %d\n",ntohs(r.sin_port));
+#endif
+				remote_addr.sin_port = r.sin_port;
+			}
+		} else
+			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
+		if( len <= 0 ) continue;
+#ifdef FIXMSS
+		fix_mss(buf, len);
+#endif
+#ifdef PRINTPKT
+   		printPacket( (EtherPacket*) buf, len , "from remote udpsocket:");
+#endif
+  
+		struct sockaddr_ll sll;
+  		memset(&sll, 0, sizeof(sll));
+  		sll.sll_family = AF_PACKET;
+  		sll.sll_protocol = htons(ETH_P_ALL);
+  		sll.sll_ifindex = ifindex;
+  		sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
+	}
+}
+
 int main(int argc, char *argv[])
 {
-  	int32_t ifindex;
-	int fdudp, fdraw;
-
+	pthread_t tid;
   	if(argc < 6) {
   		printf("Usage: ./EthUDP localip localport remoteip remoteport eth?\n");
   		exit(1);
@@ -530,53 +615,15 @@ int main(int argc, char *argv[])
 	fdudp = udp_xconnect(argv[1], argv[2], argv[3], argv[4]);
 	fdraw = open_socket(argv[5], &ifindex);
   	
-// Set non-blocking mode:
- 	int32_t flags = fcntl(fdraw, F_GETFL, 0);
-  	fcntl(fdraw, F_SETFL, O_NONBLOCK | flags);
- 	flags = fcntl(fdudp, F_GETFL, 0);
-  	fcntl(fdudp, F_SETFL, O_NONBLOCK | flags);
+	// create a pthread to forward packets from udp to raw
+	if ( pthread_create(&tid, NULL, (void *)process_udp_to_raw, NULL)!=0)  {
+                err_msg("pthread_create errno %d: %s\n",errno,strerror(errno));
+                exit(0);
+        }
 
-	while (1) {
-  		u_int8_t buf[MAX_PACKET_SIZE];
-  		fd_set fds;
-		int len;
+	//  forward packets from raw to udp
+        process_raw_to_udp();
 
-		FD_ZERO(&fds);
-		FD_SET(fdudp, &fds);
-		FD_SET(fdraw, &fds);
-			
-		select(max(fdudp, fdraw)+1, &fds, NULL, NULL, NULL);
-
-		if( FD_ISSET(fdraw, &fds) ) {  // read from eth rawsocket
-			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
-			if( len > 0 ) {
-#ifdef FIXMSS
-				fix_mss(buf, len);
-#endif
-#ifdef PRINTPKT
-     			printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
-#endif
-				write(fdudp, buf, len);
-			}
-		}  
-		if( FD_ISSET(fdudp, &fds) ) {  // read from remote udp
-			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
-			if( len > 0 ) { 
-#ifdef FIXMSS
-				fix_mss(buf, len);
-#endif
-#ifdef PRINTPKT
-   				printPacket( (EtherPacket*) buf, len , "from remote udpsocket:");
-#endif
-  
-				struct sockaddr_ll sll;
-  				memset(&sll, 0, sizeof(sll));
-  				sll.sll_family = AF_PACKET;
-  				sll.sll_protocol = htons(ETH_P_ALL);
-  				sll.sll_ifindex = ifindex;
-  				sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
-			}
-		}
-	}
-	return 0;
+        return 0;
 }
+

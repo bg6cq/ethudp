@@ -5,6 +5,7 @@ Ethernet over UDP
 
 Bridge two ethernets using UDP
 
+<pre>
 
           |-------Internet---------|
           |                        |
@@ -14,6 +15,8 @@ Bridge two ethernets using UDP
 +----+----+----+              +----+----+----+
 |   server A   |              |   server B   |
 +--------------+              +--------------+
+
+</pre>
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
