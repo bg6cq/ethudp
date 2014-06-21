@@ -1,3 +1,4 @@
+<pre>
 EthUDP
 ======
 
@@ -5,7 +6,6 @@ Ethernet over UDP
 
 Bridge two ethernets using UDP
 
-<pre>
 
           |-------Internet---------|
           |                        |
@@ -16,7 +16,6 @@ Bridge two ethernets using UDP
 |   server A   |              |   server B   |
 +--------------+              +--------------+
 
-</pre>
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
@@ -41,3 +40,4 @@ how it works:
 Note:
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
+</pre>
