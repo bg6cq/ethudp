@@ -33,6 +33,8 @@ how it works:
 Note:
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
+3. if your NIC support GRO, you should disable it by
+   ethtool -K eth1 gro off
 */	
 
 // uncomment the following line to enable automatic tcp mss fix
