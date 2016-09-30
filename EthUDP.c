@@ -52,7 +52,7 @@ struct _EtherHeader {
 
 typedef struct _EtherHeader EtherPacket;
 
-volatile struct sockaddr_in remote_addr;
+volatile struct sockaddr_storage remote_addr;
 
 int daemon_proc;            /* set nonzero by daemon_init() */
 int32_t ifindex;
@@ -513,10 +513,20 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 		if(debug)
      			printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
 		if ( nat ) {
-			if(debug)
-				printf("nat mode: send to port %d\n",ntohs(remote_addr.sin_port));
-			if ( remote_addr.sin_port )
-				sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr));
+			if(remote_addr.ss_family==AF_INET) {
+				struct sockaddr_in *r = (struct sockaddr_in *) (&remote_addr);
+				if(debug)
+					printf("nat mode: send to port %d\n",ntohs(r->sin_port));
+				if ( r->sin_port )
+					sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
+			} else if(remote_addr.ss_family==AF_INET6) {
+				struct sockaddr_in6 *r = (struct sockaddr_in6*) &remote_addr;
+				if(debug)
+					printf("nat mode: send to port %d\n",ntohs(r->sin6_port));
+				if ( r->sin6_port )
+					sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
+			}
+		
 		} else
 			write(fdudp, buf, len);
 	}
@@ -529,27 +539,36 @@ void process_udp_to_raw( void)
 
 	while (1) { 	// read from remote udp
 		if ( nat ) {
-			struct sockaddr_in r;
-			socklen_t sock_len = sizeof(struct sockaddr_in);
-			len = recvfrom (fdudp, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&r, &sock_len );
+			struct sockaddr_storage rmt;
+			socklen_t sock_len = sizeof(struct sockaddr_storage);
+			// if(debug) printf("sock_len=%d\n",sock_len);
+			len = recvfrom (fdudp, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&rmt, &sock_len );
 			if(debug) {
 				char rip[200];
-				printf("nat mode: len %d recv from host %s:%d\n",len,inet_ntop(r.sin_family, (void*) &r.sin_addr,rip,200), ntohs(r.sin_port));
-				printf("remote_host is %s:%d\n",inet_ntop(remote_addr.sin_family, (void*)&remote_addr.sin_addr,rip,200),ntohs(remote_addr.sin_port));
+				// printf("sock_len=%d\n",sock_len);
+				if(rmt.ss_family==AF_INET) {
+					struct sockaddr_in *r = (struct sockaddr_in *)&rmt;
+					printf("nat mode: len %d recv from %s:%d\n",len,
+					inet_ntop(r->sin_family, (void*)&r->sin_addr,rip,200), ntohs(r->sin_port));
+				}  else if(rmt.ss_family==AF_INET6) {
+					struct sockaddr_in6 *r = (struct sockaddr_in6 *) &rmt;
+					printf("nat mode: len %d recv from [%s]:%d\n",len,
+					inet_ntop(r->sin6_family, (void*)&r->sin6_addr,rip,200), ntohs(r->sin6_port));
+				}
 			}
 			if ( len <= 0 ) continue;
 			if(mypassword[0]==0) {  // no password set, accept new ip and port
 				if(debug) printf("no password, accept new remote ip and port\n");
-				memcpy((void*)&remote_addr, &r, sock_len);	
+				memcpy((void*)&remote_addr, &rmt, sock_len);	
 			} else if ( memcmp(buf,"PASSWORD:",9) ==0 ) { // got password packet
 				if(debug) printf("got password packet from remote %s\n",buf);
-				if(memcmp(buf+9,mypassword,strlen(mypassword))==0) {
+				if( (memcmp(buf+9,mypassword,strlen(mypassword))==0) && (*(buf+9+strlen(mypassword))==0)) {
 					if(debug)printf("password ok\n");
-					memcpy((void*)&remote_addr, &r, sock_len);	
+					memcpy((void*)&remote_addr, &rmt, sock_len);	
 				} else if(debug) printf("password error\n");
 				continue;
 			}
-			if (memcmp((void*)&remote_addr, &r, sock_len)) {
+			if (memcmp((void*)&remote_addr, &rmt, sock_len)) {
 				if(debug) printf("packet from unknow host, drop..\n");
 				continue;
 			}
