@@ -1,4 +1,4 @@
-/* EthUDP: used to create transparent bridge over ipv4/ipv6 network
+/* EthUDP: used to create tunnel over ipv4/ipv6 network
 	  by james@ustc.edu.cn 2009.04.02
 */	
 
@@ -39,7 +39,6 @@
 #define MAXFD   		64
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
-int daemon_proc;            /* set nonzero by daemon_init() */
 
 struct _EtherHeader {
   uint16_t destMAC1;
@@ -53,8 +52,9 @@ struct _EtherHeader {
 
 typedef struct _EtherHeader EtherPacket;
 
-
 volatile struct sockaddr_in remote_addr;
+
+int daemon_proc;            /* set nonzero by daemon_init() */
 int32_t ifindex;
 int fdudp, fdraw;
 int nat = 0;
@@ -155,10 +155,10 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, 1);
 		if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
 			break;                  /* success */
-        close(sockfd);          /* bind error, close and try next one */
-   } while ( (res = res->ai_next) != NULL);
+        	close(sockfd);          /* bind error, close and try next one */
+   	} while ( (res = res->ai_next) != NULL);
 
-   if (res == NULL)        /* errno from final socket() or bind() */
+   	if (res == NULL)        /* errno from final socket() or bind() */
 		err_sys("udp_server error for %s, %s", host, serv);
 
 	if (addrlenp)
@@ -169,7 +169,7 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 	return(sockfd);
 }
 
-int udp_xconnect(char *lhost,char*lserv,char*rhost,char*rserv)
+int udp_xconnect(char *lhost, char*lserv, char*rhost, char*rserv)
 { 	int	sockfd, n;
 	struct addrinfo hints, *res, *ressave;
 
@@ -349,9 +349,9 @@ u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[],u_int16_t dest
 		sum += *w&ntohs(0xFF00);   /* Thanks to Dalton */
  
     /* add the pseudo header */
-	int i;
-	for ( i=0; i<8; i++ ) 
-		sum = sum + src_addr[i] + dest_addr[i];
+    int i;
+    for ( i=0; i<8; i++ ) 
+	sum = sum + src_addr[i] + dest_addr[i];
 	
     sum += htons(len_tcp);   // why using 32bit len_tcp
     sum += htons(prot_tcp);
@@ -516,7 +516,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 			if(debug)
 				printf("nat mode: send to port %d\n",ntohs(remote_addr.sin_port));
 			if ( remote_addr.sin_port )
-				sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_in));
+				sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr));
 		} else
 			write(fdudp, buf, len);
 	}
@@ -533,24 +533,23 @@ void process_udp_to_raw( void)
 			socklen_t sock_len = sizeof(struct sockaddr_in);
 			len = recvfrom (fdudp, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&r, &sock_len );
 			if(debug) {
-				printf("nat mode: len %d recv from host %s:%d\n",len,inet_ntoa(r.sin_addr),ntohs(r.sin_port));
-				printf("remote_host is %s:%d\n",inet_ntoa(remote_addr.sin_addr),ntohs(remote_addr.sin_port));
+				char rip[200];
+				printf("nat mode: len %d recv from host %s:%d\n",len,inet_ntop(r.sin_family, (void*) &r.sin_addr,rip,200), ntohs(r.sin_port));
+				printf("remote_host is %s:%d\n",inet_ntop(remote_addr.sin_family, (void*)&remote_addr.sin_addr,rip,200),ntohs(remote_addr.sin_port));
 			}
 			if ( len <= 0 ) continue;
 			if(mypassword[0]==0) {  // no password set, accept new ip and port
 				if(debug) printf("no password, accept new remote ip and port\n");
-				memcpy((void*)&remote_addr.sin_addr, &r.sin_addr , 4);	
-				remote_addr.sin_port = r.sin_port;
+				memcpy((void*)&remote_addr, &r, sock_len);	
 			} else if ( memcmp(buf,"PASSWORD:",9) ==0 ) { // got password packet
 				if(debug) printf("got password packet from remote %s\n",buf);
 				if(memcmp(buf+9,mypassword,strlen(mypassword))==0) {
 					if(debug)printf("password ok\n");
-					memcpy((void*)&remote_addr.sin_addr, &r.sin_addr , 4);	
-					remote_addr.sin_port = r.sin_port;
+					memcpy((void*)&remote_addr, &r, sock_len);	
 				} else if(debug) printf("password error\n");
 				continue;
 			}
-			if (memcmp((void*)&remote_addr.sin_addr, &r.sin_addr , 4) || (remote_addr.sin_port != r.sin_port) ) {
+			if (memcmp((void*)&remote_addr, &r, sock_len)) {
 				if(debug) printf("packet from unknow host, drop..\n");
 				continue;
 			}
