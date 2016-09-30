@@ -1,10 +1,10 @@
 <pre>
 EthUDP
 ======
+<pre>
 Ethernet over UDP
 
 1. mode e
-<pre>
 Bridge two ethernets using UDP
 
           |-------Internet---------|
@@ -21,12 +21,12 @@ Each server connects Internet via interface eth0, IP is IPA & IPB.
 On server A, run following command
 ip link set eth1 up
 ifconfig eth1 mtu 1508
-./EthUDP IPA 6000 IPB 6000 eth1
+./EthUDP -e IPA 6000 IPB 6000 eth1
 
 On server B, run following command
 ip link set eth1 up
 ifconfig eth1 mtu 1508
-./EthUDP IPB 6000 IPA 6000 eth1
+./EthUDP -e IPB 6000 IPA 6000 eth1
 
 will bridge eth1 of two hosts via internet using UDP port 6000
 
@@ -35,10 +35,8 @@ how it works:
 * open udp socket to remote host
 * read packet from raw socket, send to udp socket
 * read packet from udp socket, send to raw socket
-</pre>
 
 2. mode i
-<pre>
 create a tap tunnel interface using UDP
 
        |------------Internet--------------|
