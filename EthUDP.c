@@ -520,10 +520,10 @@ void send_password_to_udp( void) // send password to remote
 	int len;
 
 	while (1) { 	
-		if(mypassword[0]) {
+		if(mypassword[0] && (nat==0)) {
 			len = snprintf(buf,MAX_PACKET_SIZE,"PASSWORD:%s",mypassword);
 			if(debug) printf("send password: %s\n",buf);
-			write(fdudp, buf, len);
+			write(fdudp, buf, len+1);
 		}
 		sleep(5);
 	}
@@ -585,12 +585,17 @@ void process_udp_to_raw( void)
 				} else if(debug) printf("password error\n");
 				continue;
 			}
+			if (memcmp((void*)&remote_addr.sin_addr, &r.sin_addr , 4) || (remote_addr.sin_port != r.sin_port) ) {
+				if(debug) printf("packet from unknow host, drop..\n");
+				continue;
+			}
 		} else
 			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
 		if( len <= 0 ) continue;
 #ifdef FIXMSS
 		fix_mss(buf, len);
 #endif
+		
 		if(debug)
    			printPacket( (EtherPacket*) buf, len , "from remote udpsocket:");
 		if(mode==0) {  
