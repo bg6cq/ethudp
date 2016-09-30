@@ -1,11 +1,11 @@
 <pre>
 EthUDP
 ======
-
 Ethernet over UDP
 
+1. mode e
+<pre>
 Bridge two ethernets using UDP
-
 
           |-------Internet---------|
           |                        |
@@ -15,7 +15,6 @@ Bridge two ethernets using UDP
 +----+----+----+              +----+----+----+
 |   server A   |              |   server B   |
 +--------------+              +--------------+
-
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
@@ -32,12 +31,46 @@ ifconfig eth1 mtu 1508
 will bridge eth1 of two hosts via internet using UDP port 6000
 
 how it works:
-1. open raw socket for eth1
-2. open udp socket to remote host
-3. read packet from raw socket, send to udp socket
-4. read packet from udp socket, send to raw socket
+* open raw socket for eth1
+* open udp socket to remote host
+* read packet from raw socket, send to udp socket
+* read packet from udp socket, send to raw socket
+</pre>
+
+2. mode i
+<pre>
+create a tap tunnel interface using UDP
+
+       |------------Internet--------------|
+       |                                  |
+       |                                  |
+       |IPA                            IPB|
+       |eth0                          eth0|
++------+-------+                  +-------+------+
+|   server A   +--IP1--------IP2--+   server B   |
++--------------+                  +--------------+
+
+Each server connects Internet via interface eth0, IP is IPA & IPB.
+
+On server A, run following command
+./EthUDP -i IPA 6000 IPB 6000 IP1 masklen
+
+On server B, run following command
+./EthUDP -i IPB 6000 IPA 6000 IP2 masklen
+
+will create a tap tunnel interface and setup IP1/masklen IP2/masklen via internet using UDP port 6000
+
+how it works:
+* open tap raw socket, setip addr
+* open udp socket to remote host
+* read packet from raw socket, send to udp socket
+* read packet from udp socket, send to raw socket
 
 Note:
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
+3. support connection from NATed server
+If server B connect from NAT IP, please run
+./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
+./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
 </pre>
