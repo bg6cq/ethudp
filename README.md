@@ -67,7 +67,9 @@ how it works:
 Note:
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
-3. support connection from NATed server
+3. if your NIC support GRO, you should disable it by
+ethtool -K eth1 gro off
+4. support connection from NATed server
 If server B connect from NAT IP, please run
 ./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
 ./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
