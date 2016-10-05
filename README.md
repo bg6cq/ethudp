@@ -85,4 +85,5 @@ If server B connect from NAT IP, please run
 ./EthUDP -i -p password IPA 6000 0.0.0.0 0 ipa 24
 2. 假定B的隧道接口是ipb/24，B上运行
 ./EthUDP -i -p password 0.0.0.0 0 IPA 6000 ipb 24
+此后，A和B可以通过 ipa/ipb 互相通信
 </pre>
