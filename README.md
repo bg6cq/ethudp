@@ -86,4 +86,8 @@ If server B connect from NAT IP, please run
 2. 假定B的隧道接口是ipb/24，B上运行
 ./EthUDP -i -p password 0.0.0.0 0 IPA 6000 ipb 24
 此后，A和B可以通过 ipa/ipb 互相通信
+
+从公网仅仅能看到B与A的6000端口之间有UDP通信
+
+注意：密码和所有数据包均明文传输
 </pre>
