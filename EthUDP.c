@@ -60,10 +60,21 @@ volatile struct sockaddr_storage remote_addr;
 int daemon_proc;            /* set nonzero by daemon_init() */
 int32_t ifindex;
 int fdudp, fdraw;
+int transfamily = 0;
 int nat = 0;
 int debug = 0;
 int mode = -1;   // 0 eth bridge, 1 interface
 char mypassword [MAXLEN];
+char xor_key[MAXLEN];
+int xor_key_len = 0;
+
+void xor_encrypt(u_int8_t *buf, int n)
+{
+    	int i;
+	if (xor_key_len<=0) return;
+    	for( i = 0 ; i < n ; i++ )
+        	buf[i] = buf[i] ^ xor_key[ i%xor_key_len ];
+}
 
 void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 {	int	errno_save, n;
@@ -134,7 +145,6 @@ void daemon_init(const char *pname, int facility)
 	openlog(pname, LOG_PID, facility);
 }
 
-int transfamily = 0;
 
 int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 { 	int	sockfd, n;
@@ -496,7 +506,9 @@ void send_password_to_udp( void) // send password to remote
 		if(mypassword[0] && (nat==0)) {
 			len = snprintf(buf,MAX_PACKET_SIZE,"PASSWORD:%s",mypassword);
 			if(debug) printf("%s send password: %s\n", stamp(), buf);
-			write(fdudp, buf, len+1);
+			len ++;
+			xor_encrypt((u_int8_t*)buf, len);
+			write(fdudp, buf, len);
 		}
 		sleep(5);
 	}
@@ -520,6 +532,9 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 #endif
 		if(debug)
      			printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
+
+		xor_encrypt(buf, len);
+
 		if ( nat ) {
 			char rip[200];
 			if(remote_addr.ss_family==AF_INET) {
@@ -568,6 +583,9 @@ void process_udp_to_raw( void)
 				}
 			}
 			if ( len <= 0 ) continue;
+
+			xor_encrypt(buf, len);
+
 			if(mypassword[0]==0) {  // no password set, accept new ip and port
 				if(debug) printf("no password, accept new remote ip and port\n");
 				memcpy((void*)&remote_addr, &rmt, sock_len);	
@@ -587,9 +605,11 @@ void process_udp_to_raw( void)
 					continue;
 				}
 			}
-		} else
+		} else {
 			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
-		if( len <= 0 ) continue;
+			if( len <= 0 ) continue;
+			xor_encrypt(buf, len);
+		}
 #ifdef FIXMSS
 		fix_mss(buf, len);
 #endif
@@ -647,8 +667,8 @@ int open_tun (const char *dev, char **actual)
 } 
 
 void usage(void) {
-  	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] localip localport remoteip remoteport eth?\n");
-  	printf("       ./EthUDP [ -d ] -i [ -p passwd ] localip localport remoteip remoteport ipaddress masklen\n");
+  	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport eth?\n");
+  	printf("       ./EthUDP [ -d ] -i [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport ipaddress masklen\n");
   	exit(0);
 }
 
@@ -670,6 +690,11 @@ int main(int argc, char *argv[])
 			i ++;
 			if ( argc-i <= 0) usage();
 			strncpy(mypassword, argv[i], MAXLEN-1);
+		} else if (strcmp(argv[i],"-x")==0 ) {
+			i ++;
+			if ( argc-i <= 0) usage();
+			strncpy(xor_key, argv[i], MAXLEN-1);
+			xor_key_len = strlen(xor_key);
 		} else got_one = 0;
 		if ( got_one ) 
 			i++;
@@ -678,10 +703,12 @@ int main(int argc, char *argv[])
 	if ( (mode==MODEI) && (argc-i!=6) ) usage();
 	if ( mode==-1 ) usage();		
 	if (debug) {
-		printf("debug = 1\n");
-		printf(" mode = %d (0 eth bridge, 1 interface)\n",mode);
-		printf(" pass = %s\n",mypassword);
-		printf("  cmd = ");
+		printf("   debug = 1\n");
+		printf("    mode = %d (0 eth bridge, 1 interface)\n",mode);
+		printf("password = %s\n", mypassword);
+		printf(" xor_key = %s\n", xor_key);
+		printf(" key_len = %d\n", xor_key_len);
+		printf("     cmd = ");
 		int n;
 		for(n=i; n<argc; n++)
 			printf("%s ",argv[n]);
