@@ -541,9 +541,9 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 {
   	u_int8_t buf[MAX_PACKET_SIZE];
 	int len;
+	int offset = 0;
 	
 	while (1) { 	// read from eth rawsocket
-		int offset = 0;
 		if(mode==MODEE) {
 #ifdef HAVE_PACKET_AUXDATA
 			struct sockaddr	from;
@@ -583,14 +583,15 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 #else
 				if (aux->tp_vlan_tci == 0) /* this is ambigious but without the */
 #endif
-						continue;
+					continue;
 
-
+				if(debug) printf("len=%d, iov_len=%d, ",len, iov.iov_len);
 
 
 				len = len > iov.iov_len ? iov.iov_len : len;
 				if (len < 12 )  // MAC_len * 2
 					break;
+				if(debug) printf("len=%d\n ",len);
 
 				memmove(buf, buf + VLAN_TAG_LEN, 12);
 				offset = 0;
@@ -600,7 +601,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 			 	*/
 				tag = (struct vlan_tag *)(buf + 12);
 				if(debug) 
-					printf("insert vlan id\n");
+					printf("insert vlan id, recv len=%d\n",len);
 				tag->vlan_tpid = 0x0081;
 				tag->vlan_tci = htons(aux->tp_vlan_tci);
 
@@ -612,8 +613,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 #else
 			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
 #endif
-		}
-		else if(mode==MODEI)
+		} else if(mode==MODEI)
 			len = read(fdraw, buf, MAX_PACKET_SIZE);
 		else return;
 
@@ -621,8 +621,10 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 #ifdef FIXMSS
 		fix_mss(buf + offset, len);
 #endif
-		if(debug)
+		if(debug) {
      			printPacket( (EtherPacket*) (buf + offset), len , "from local  rawsocket:");
+			if(offset) printf("offset=%d\n", offset);
+		}
 
 		xor_encrypt(buf + offset, len);
 
