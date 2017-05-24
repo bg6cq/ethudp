@@ -601,7 +601,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 				tag = (struct vlan_tag *)(buf + 12);
 				if(debug) 
 					printf("insert vlan id\n");
-				tag->vlan_tpid = 0x8100;
+				tag->vlan_tpid = 0x0081;
 				tag->vlan_tci = htons(aux->tp_vlan_tci);
 
 			 	/* Add the tag to the packet lengths.
