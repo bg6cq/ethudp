@@ -67,18 +67,21 @@ struct _EtherHeader {
 
 typedef struct _EtherHeader EtherPacket;
 
-volatile struct sockaddr_storage remote_addr;
+volatile struct sockaddr_storage remote_addr[2];
 
 int daemon_proc;            /* set nonzero by daemon_init() */
 int32_t ifindex;
-int fdudp, fdraw;
-int transfamily = 0;
-int nat = 0;
+int fdudp[2], fdraw;
+int transfamily;
+int nat[2];
 int debug = 0;
 int mode = -1;   // 0 eth bridge, 1 interface
 char mypassword [MAXLEN];
 char xor_key[MAXLEN];
 int xor_key_len = 0;
+int master_slave = 0;
+volatile time_t last_pong[2];
+volatile int master_dead = 0;
 
 void xor_encrypt(u_int8_t *buf, int n)
 {
@@ -194,7 +197,7 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 	return(sockfd);
 }
 
-int udp_xconnect(char *lhost, char*lserv, char*rhost, char*rserv)
+int udp_xconnect(char *lhost, char*lserv, char*rhost, char*rserv, int index)
 { 	int	sockfd, n;
 	struct addrinfo hints, *res, *ressave;
 
@@ -211,8 +214,8 @@ int udp_xconnect(char *lhost, char*lserv, char*rhost, char*rserv)
 	if ( ((struct sockaddr_in*) res->ai_addr)->sin_port == 0 ) {
 		if(debug) 
 			printf("port==0, is nat\n");
-		nat = 1;
-		memcpy((void *)&remote_addr, res->ai_addr, res->ai_addrlen);
+		nat[index] = 1;
+		memcpy((void *)&(remote_addr[index]), res->ai_addr, res->ai_addrlen);
 		return sockfd;
 	}
 
@@ -520,23 +523,69 @@ void fix_mss(u_int8_t *buf, int len)
 	} else return; // not IP packet
 }
 
-void send_password_to_udp( void) // send password to remote  
+
+void send_udp_to_remote(u_int8_t *buf, int len, int index)     // send udp packet to remote 
 {
-  	char buf[MAX_PACKET_SIZE];
+	if ( nat[master_dead] ) {
+		char rip[200];
+		if(remote_addr[master_dead].ss_family==AF_INET) {
+			struct sockaddr_in *r = (struct sockaddr_in *) (&remote_addr[index]);
+			if(debug) 
+				printf("%s nat mode: send len %d to %s:%d\n", stamp(), len,
+					inet_ntop(r->sin_family, (void*)&r->sin_addr,rip,200), ntohs(r->sin_port));
+			if ( r->sin_port )
+				sendto(fdudp[index], buf, len , 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
+		} else if(remote_addr[master_dead].ss_family==AF_INET6) {
+			struct sockaddr_in6 *r = (struct sockaddr_in6*) &remote_addr[index];
+			if(debug)
+				printf("%s nat mode: send len %d to [%s]:%d\n", stamp(), len,
+					inet_ntop(r->sin6_family, (void*)&r->sin6_addr,rip,200), ntohs(r->sin6_port));
+			if ( r->sin6_port )
+				sendto(fdudp[index], buf, len , 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
+		}
+	} else
+		write(fdudp[index], buf , len);
+}
+
+void send_keepalive_to_udp( void) // send keepalive to remote  
+{
+  	u_int8_t buf[MAX_PACKET_SIZE];
 	int len;
 
 	while (1) { 	
-		if(mypassword[0] && (nat==0)) {
-			len = snprintf(buf,MAX_PACKET_SIZE,"PASSWORD:%s",mypassword);
-			if(debug) printf("%s send password: %s\n", stamp(), buf);
-			len ++;
-			xor_encrypt((u_int8_t*)buf, len);
-			write(fdudp, buf, len);
+		if(mypassword[0]) {
+			if( nat[0]==0) {
+				len = snprintf((char*)buf,MAX_PACKET_SIZE,"PASSWORD:%s",mypassword);
+				if(debug) printf("%s send password: %s\n", stamp(), buf);
+				len ++;
+				xor_encrypt((u_int8_t*)buf, len);
+				write(fdudp[0], buf, len);
+			}
+			if(master_slave && (nat[1]==0) ) 
+				write(fdudp[1], buf, len);
 		}
-		sleep(5);
+		memcpy(buf,"PING:",5);
+		len = 5;
+		xor_encrypt((u_int8_t*)buf, len);
+		send_udp_to_remote(buf,len,0);
+		if(master_slave) {
+			send_udp_to_remote(buf,len,1);
+	
+			if(master_dead==0) {  // now master is OK
+				if(time(NULL)-5>last_pong[0]) { // master OK->BAD
+					master_dead = 1;
+					if(debug) printf("%s master OK->BAD\n",stamp());
+				}
+			} else {  // now master is BAD
+				if(time(NULL)-5<last_pong[0]) { // master BAD->OK
+					master_dead = 0;
+					if(debug) printf("%s master BAD->OK\n",stamp());
+				}
+			}
+		}
+		sleep(1);
 	}
 }
-
 void process_raw_to_udp( void) // used by mode==0 & mode==1
 {
   	u_int8_t buf[MAX_PACKET_SIZE];
@@ -585,7 +634,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 #endif
 					continue;
 
-				if(debug) printf("len=%d, iov_len=%d, ",len, iov.iov_len);
+				if(debug) printf("len=%d, iov_len=%d, ",len, (int)iov.iov_len);
 
 
 				len = len > iov.iov_len ? iov.iov_len : len;
@@ -628,40 +677,21 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 
 		xor_encrypt(buf + offset, len);
 
-		if ( nat ) {
-			char rip[200];
-			if(remote_addr.ss_family==AF_INET) {
-				struct sockaddr_in *r = (struct sockaddr_in *) (&remote_addr);
-				if(debug) 
-					printf("%s nat mode: send len %d to %s:%d\n", stamp(), len,
-						inet_ntop(r->sin_family, (void*)&r->sin_addr,rip,200), ntohs(r->sin_port));
-				if ( r->sin_port )
-					sendto(fdudp, buf + offset, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
-			} else if(remote_addr.ss_family==AF_INET6) {
-				struct sockaddr_in6 *r = (struct sockaddr_in6*) &remote_addr;
-				if(debug)
-					printf("%s nat mode: send len %d to [%s]:%d\n", stamp(), len,
-						inet_ntop(r->sin6_family, (void*)&r->sin6_addr,rip,200), ntohs(r->sin6_port));
-				if ( r->sin6_port )
-					sendto(fdudp, buf + offset , len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
-			}
-		
-		} else
-			write(fdudp, buf + offset, len);
+		send_udp_to_remote(buf+offset, len, master_dead);
 	}
 }
 
-void process_udp_to_raw( void)
+void process_udp_to_raw(int index)
 {
   	u_int8_t buf[MAX_PACKET_SIZE];
 	int len;
 
 	while (1) { 	// read from remote udp
-		if ( nat ) {
+		if ( nat[index] ) {
 			struct sockaddr_storage rmt;
 			socklen_t sock_len = sizeof(struct sockaddr_storage);
 			// if(debug) printf("sock_len=%d\n",sock_len);
-			len = recvfrom (fdudp, buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&rmt, &sock_len );
+			len = recvfrom (fdudp[index], buf, MAX_PACKET_SIZE, 0, (struct sockaddr *)&rmt, &sock_len );
 			if(debug) {
 				char rip[200];
 				// printf("sock_len=%d\n",sock_len);
@@ -679,9 +709,24 @@ void process_udp_to_raw( void)
 
 			xor_encrypt(buf, len);
 
+			if(memcmp(buf,"PING:",5) ==0 ) {
+				if(debug) printf("ping from index %d udp\n",index);
+				memcpy(buf,"PONG:",5);
+				len = 5;
+				xor_encrypt(buf, len);
+				send_udp_to_remote(buf,len,index);
+				continue;
+			}
+
+			if(memcmp(buf,"PONG:",5) ==0 ) {
+				if(debug) printf("pong from index %d udp\n",index);
+				last_pong[index] = time(NULL);
+				continue;
+			}
+
 			if(mypassword[0]==0) {  // no password set, accept new ip and port
 				if(debug) printf("no password, accept new remote ip and port\n");
-				memcpy((void*)&remote_addr, &rmt, sock_len);	
+				memcpy((void*)&remote_addr[index], &rmt, sock_len);	
 				if ( memcmp(buf,"PASSWORD:",9) ==0 )  // got password packet, skip this packet
 					continue;
 			} else {
@@ -689,17 +734,17 @@ void process_udp_to_raw( void)
 					if(debug) printf("password packet from remote %s, ",buf);
 					if( (memcmp(buf+9,mypassword,strlen(mypassword))==0) && (*(buf+9+strlen(mypassword))==0)) {
 						if(debug)printf("ok\n");
-						memcpy((void*)&remote_addr, &rmt, sock_len);	
+						memcpy((void*)&remote_addr[index], &rmt, sock_len);	
 					} else if(debug) printf("error\n");
 					continue;
 				}
-				if (memcmp((void*)&remote_addr, &rmt, sock_len)) {
+				if (memcmp((void*)&remote_addr[index], &rmt, sock_len)) {
 					if(debug) printf("packet from unknow host, drop..\n");
 					continue;
 				}
 			}
 		} else {
-			len = recv(fdudp, buf, MAX_PACKET_SIZE, 0);
+			len = recv(fdudp[index], buf, MAX_PACKET_SIZE, 0);
 			if( len <= 0 ) continue;
 			xor_encrypt(buf, len);
 		}
@@ -721,6 +766,16 @@ void process_udp_to_raw( void)
 	}
 }
 
+
+void process_udp_to_raw_master( void)
+{
+	process_udp_to_raw(0);
+}
+
+void process_udp_to_raw_slave( void)
+{
+	process_udp_to_raw(1);
+}
 
 int open_tun (const char *dev, char **actual) 
 { 
@@ -760,8 +815,8 @@ int open_tun (const char *dev, char **actual)
 } 
 
 void usage(void) {
-  	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport eth?\n");
-  	printf("       ./EthUDP [ -d ] -i [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport ipaddress masklen\n");
+  	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport eth? [localip localport remoteip remoteport]\n");
+  	printf("       ./EthUDP [ -d ] -i [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport ipaddress masklen [localip localport remoteip remoteport]\n");
   	exit(0);
 }
 
@@ -792,15 +847,26 @@ int main(int argc, char *argv[])
 		if ( got_one ) 
 			i++;
 	} while (got_one);
-	if ( (mode==MODEE) && (argc-i!=5) ) usage();
-	if ( (mode==MODEI) && (argc-i!=6) ) usage();
+	if (mode==MODEE) {
+		if( argc-i==9 ) 
+			master_slave = 1;
+		else  if( argc-i!=5 ) 
+			 usage();
+	} 
+	if (mode==MODEI) {
+		if( argc-i==10 ) 
+			master_slave = 1;
+		else  if( argc-i!=6 ) 
+			 usage();
+	} 
 	if ( mode==-1 ) usage();		
 	if (debug) {
-		printf("   debug = 1\n");
-		printf("    mode = %d (0 eth bridge, 1 interface)\n",mode);
-		printf("password = %s\n", mypassword);
-		printf(" xor_key = %s\n", xor_key);
-		printf(" key_len = %d\n", xor_key_len);
+		printf("       debug = 1\n");
+		printf("        mode = %d (0 eth bridge, 1 interface)\n",mode);
+		printf("    password = %s\n", mypassword);
+		printf("     xor_key = %s\n", xor_key);
+		printf("     key_len = %d\n", xor_key_len);
+		printf("master_slave = %d\n", master_slave);
 		printf("     cmd = ");
 		int n;
 		for(n=i; n<argc; n++)
@@ -824,12 +890,14 @@ int main(int argc, char *argv[])
 	}
 
 	if ( mode==MODEE ) { // eth bridge mode
-		fdudp = udp_xconnect(argv[i], argv[i+1], argv[i+2], argv[i+3]);
+		fdudp[0] = udp_xconnect(argv[i], argv[i+1], argv[i+2], argv[i+3], 0 );
+		if(master_slave) fdudp[1] = udp_xconnect(argv[i+5], argv[i+6], argv[i+7], argv[i+8], 1);
 		fdraw = open_socket(argv[i+4], &ifindex);
 	} else if ( mode==MODEI ) { // interface mode
 		char *actualname = NULL; 
 		char buf[MAXLEN];
-		fdudp = udp_xconnect(argv[i], argv[i+1], argv[i+2], argv[i+3]);
+		fdudp[0] = udp_xconnect(argv[i], argv[i+1], argv[i+2], argv[i+3], 0);
+		if(master_slave) fdudp[1] = udp_xconnect(argv[i+6], argv[i+7], argv[i+8], argv[i+9], 1);
 		fdraw =  open_tun ("tap", &actualname); 
 		snprintf(buf, MAXLEN, "/sbin/ip addr add %s/%s dev %s; /sbin/ip link set %s up",
 		argv[i+4], argv[i+5], actualname, actualname);
@@ -841,15 +909,20 @@ int main(int argc, char *argv[])
 
   	
 	// create a pthread to forward packets from udp to raw
-	if ( pthread_create(&tid, NULL, (void *)process_udp_to_raw, NULL)!=0)  {
+	if ( pthread_create(&tid, NULL, (void *)process_udp_to_raw_master, NULL)!=0)  {
                	err_msg("pthread_create errno %d: %s\n",errno,strerror(errno));
                	exit(0);
        	}
-	if ( mypassword[0] && (nat==0) ) {
-		if( pthread_create(&tid, NULL, (void *)send_password_to_udp,NULL)!=0) {// send password to remote  
-               		err_msg("pthread_create errno %d: %s\n",errno,strerror(errno));
-               		exit(0);
-       		}
+
+	if(master_slave)
+	if ( pthread_create(&tid, NULL, (void *)process_udp_to_raw_slave, NULL)!=0)  {
+               	err_msg("pthread_create errno %d: %s\n",errno,strerror(errno));
+               	exit(0);
+       	}
+
+	if( pthread_create(&tid, NULL, (void *)send_keepalive_to_udp,NULL)!=0) {// send keepalive to remote  
+           	err_msg("pthread_create errno %d: %s\n",errno,strerror(errno));
+             	exit(0);
 	}
 
 	//  forward packets from raw to udp
@@ -857,4 +930,3 @@ int main(int argc, char *argv[])
 
        	return 0;
 }
-
