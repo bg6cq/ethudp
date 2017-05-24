@@ -5,6 +5,9 @@
 // uncomment the following line to enable automatic tcp mss fix
 //#define FIXMSS   1
 
+// kernel use auxdata to send vlan tag, we use this to reconstructiong vlan header
+#define HAVE_PACKET_AUXDATA 1
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +45,15 @@
 #define MODEI	1	// tap interface mode
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
+
+#ifdef HAVE_PACKET_AUXDATA
+//#include <uapi/linux/if_packet.h>
+#define VLAN_TAG_LEN   4
+struct vlan_tag {
+       u_int16_t       vlan_tpid;              /* ETH_P_8021Q */
+       u_int16_t       vlan_tci;               /* VLAN TCI */
+};
+#endif
 
 struct _EtherHeader {
   uint16_t destMAC1;
@@ -273,6 +285,17 @@ int32_t open_socket(char *ifname, int32_t *rifindex)
 		if(debug)
 			printf("interface %d flushed\n", ifindex);
   	} while (i);
+
+       /* Enable auxillary data if supported and reserve room for
+        * reconstructing VLAN headers. */
+#ifdef HAVE_PACKET_AUXDATA
+       int val = 1;
+       if (setsockopt(fd, SOL_PACKET, PACKET_AUXDATA, &val,
+                      sizeof(val)) == -1 && errno != ENOPROTOOPT) {
+               err_sys("setsockopt(packet_auxdata): %s", strerror(errno));
+       }
+#endif /* HAVE_PACKET_AUXDATA */
+
 
 	if(debug) 
 	  	printf("%s opened (fd=%d interface=%d)\n", ifname, fd, ifindex);
@@ -518,22 +541,90 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 {
   	u_int8_t buf[MAX_PACKET_SIZE];
 	int len;
-
+	
 	while (1) { 	// read from eth rawsocket
-		if(mode==MODEE)
+		int offset = 0;
+		if(mode==MODEE) {
+#ifdef HAVE_PACKET_AUXDATA
+			struct sockaddr	from;
+			struct iovec	iov;
+			struct msghdr	msg;
+			struct cmsghdr	*cmsg;
+			union {
+				struct cmsghdr	cmsg;
+				char		buf[CMSG_SPACE(sizeof(struct tpacket_auxdata))];
+			} cmsg_buf;
+			msg.msg_name		= &from;
+			msg.msg_namelen		= sizeof(from);
+			msg.msg_iov		= &iov;
+			msg.msg_iovlen		= 1;
+			msg.msg_control		= &cmsg_buf;
+			msg.msg_controllen	= sizeof(cmsg_buf);
+			msg.msg_flags		= 0;
+	
+			offset = VLAN_TAG_LEN;	
+			iov.iov_len		= MAX_PACKET_SIZE - offset;
+			iov.iov_base		= buf + offset;
+			len = recvmsg(fdraw, &msg, MSG_TRUNC);
+			if( len <= 0 ) continue;
+			for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+				struct tpacket_auxdata *aux;
+				struct vlan_tag *tag;
+
+				if (cmsg->cmsg_len < CMSG_LEN(sizeof(struct tpacket_auxdata)) ||
+			    		cmsg->cmsg_level != SOL_PACKET ||
+			    		cmsg->cmsg_type != PACKET_AUXDATA)
+				continue;
+
+				aux = (struct tpacket_auxdata *)CMSG_DATA(cmsg);
+
+#if defined(TP_STATUS_VLAN_VALID)
+				if ((aux->tp_vlan_tci == 0) && !(aux->tp_status & TP_STATUS_VLAN_VALID))
+#else
+				if (aux->tp_vlan_tci == 0) /* this is ambigious but without the */
+#endif
+						continue;
+
+
+
+
+				len = len > iov.iov_len ? iov.iov_len : len;
+				if (len < 12 )  // MAC_len * 2
+					break;
+
+				memmove(buf, buf + VLAN_TAG_LEN, 12);
+				offset = 0;
+
+				/*
+			 	* Now insert the tag.
+			 	*/
+				tag = (struct vlan_tag *)(buf + 12);
+				if(debug) 
+					printf("insert vlan id\n");
+				tag->vlan_tpid = 0x8100;
+				tag->vlan_tci = htons(aux->tp_vlan_tci);
+
+			 	/* Add the tag to the packet lengths.
+			 	*/
+				len += VLAN_TAG_LEN;
+				break;
+			}
+#else
 			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
+#endif
+		}
 		else if(mode==MODEI)
 			len = read(fdraw, buf, MAX_PACKET_SIZE);
 		else return;
 
 		if( len <= 0 ) continue;
 #ifdef FIXMSS
-		fix_mss(buf, len);
+		fix_mss(buf + offset, len);
 #endif
 		if(debug)
-     			printPacket( (EtherPacket*) buf, len , "from local  rawsocket:");
+     			printPacket( (EtherPacket*) (buf + offset), len , "from local  rawsocket:");
 
-		xor_encrypt(buf, len);
+		xor_encrypt(buf + offset, len);
 
 		if ( nat ) {
 			char rip[200];
@@ -543,18 +634,18 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 					printf("%s nat mode: send len %d to %s:%d\n", stamp(), len,
 						inet_ntop(r->sin_family, (void*)&r->sin_addr,rip,200), ntohs(r->sin_port));
 				if ( r->sin_port )
-					sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
+					sendto(fdudp, buf + offset, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
 			} else if(remote_addr.ss_family==AF_INET6) {
 				struct sockaddr_in6 *r = (struct sockaddr_in6*) &remote_addr;
 				if(debug)
 					printf("%s nat mode: send len %d to [%s]:%d\n", stamp(), len,
 						inet_ntop(r->sin6_family, (void*)&r->sin6_addr,rip,200), ntohs(r->sin6_port));
 				if ( r->sin6_port )
-					sendto(fdudp, buf, len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
+					sendto(fdudp, buf + offset , len , 0, (struct sockaddr *)&remote_addr, sizeof(struct sockaddr_storage));
 			}
 		
 		} else
-			write(fdudp, buf, len);
+			write(fdudp, buf + offset, len);
 	}
 }
 
