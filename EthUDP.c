@@ -41,8 +41,9 @@
 #define MAX_PACKET_SIZE	2048
 #define MAXFD   		64
 
-#define MODEE	0	// ether bridge mode
+#define MODEE	0	// raw ether bridge mode
 #define MODEI	1	// tap interface mode
+#define MODEB	2	// bridge mode
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
 
@@ -662,7 +663,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 #else
 			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
 #endif
-		} else if(mode==MODEI)
+		} else if((mode==MODEI) || (mode==MODEB))
 			len = read(fdraw, buf, MAX_PACKET_SIZE);
 		else return;
 
@@ -761,7 +762,7 @@ void process_udp_to_raw(int index)
   			sll.sll_protocol = htons(ETH_P_ALL);
   			sll.sll_ifindex = ifindex;
   			sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
-		} else if(mode==MODEI) 
+		} else if((mode==MODEI) || (mode==MODEB))
 			write(fdraw, buf, len);
 	}
 }
@@ -817,6 +818,7 @@ int open_tun (const char *dev, char **actual)
 void usage(void) {
   	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport eth? [localip localport remoteip remoteport]\n");
   	printf("       ./EthUDP [ -d ] -i [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport ipaddress masklen [localip localport remoteip remoteport]\n");
+  	printf("       ./EthUDP [ -d ] -b [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport bridge [localip localport remoteip remoteport]\n");
   	exit(0);
 }
 
@@ -834,6 +836,8 @@ int main(int argc, char *argv[])
 			mode = MODEE;
 		else if (strcmp(argv[i],"-i")==0 ) 
 			mode = MODEI;
+		else if (strcmp(argv[i],"-b")==0 ) 
+			mode = MODEB;
 		else if (strcmp(argv[i],"-p")==0 ) {
 			i ++;
 			if ( argc-i <= 0) usage();
@@ -847,7 +851,7 @@ int main(int argc, char *argv[])
 		if ( got_one ) 
 			i++;
 	} while (got_one);
-	if (mode==MODEE) {
+	if ((mode==MODEE)||(mode==MODEB)) {
 		if( argc-i==9 ) 
 			master_slave = 1;
 		else  if( argc-i!=5 ) 
@@ -862,7 +866,7 @@ int main(int argc, char *argv[])
 	if ( mode==-1 ) usage();		
 	if (debug) {
 		printf("       debug = 1\n");
-		printf("        mode = %d (0 eth bridge, 1 interface)\n",mode);
+		printf("        mode = %d (0 raw eth bridge, 1 interface, 2 bridge)\n",mode);
 		printf("    password = %s\n", mypassword);
 		printf("     xor_key = %s\n", xor_key);
 		printf("     key_len = %d\n", xor_key_len);
@@ -901,6 +905,18 @@ int main(int argc, char *argv[])
 		fdraw =  open_tun ("tap", &actualname); 
 		snprintf(buf, MAXLEN, "/sbin/ip addr add %s/%s dev %s; /sbin/ip link set %s up",
 		argv[i+4], argv[i+5], actualname, actualname);
+	
+		if(debug) printf(" run cmd: %s\n",buf);
+		system(buf);
+		if(debug) system("/sbin/ip addr");
+	} else if(mode==MODEB) { // bridge mode
+		char *actualname = NULL; 
+		char buf[MAXLEN];
+		fdudp[0] = udp_xconnect(argv[i], argv[i+1], argv[i+2], argv[i+3], 0);
+		if(master_slave) fdudp[1] = udp_xconnect(argv[i+5], argv[i+6], argv[i+7], argv[i+8], 1);
+		fdraw =  open_tun ("tap", &actualname); 
+		snprintf(buf, MAXLEN, "/sbin/ip link set %s up; brctl addif %s %s",
+		actualname, argv[i+4], actualname);
 	
 		if(debug) printf(" run cmd: %s\n",buf);
 		system(buf);
