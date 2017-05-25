@@ -73,6 +73,47 @@ how it works:
 * read packet from raw socket, send to udp socket
 * read packet from udp socket, send to raw socket
 
+
+## 3. mode b
+create a tap tunnel interface using UDP
+<pre>
+       |------------Internet--------------|
+       |                                  |
+       |                                  |
+       |IPA                            IPB|
+       |eth0                          eth0|
++------+-------+                  +-------+------+
+|   server A   +--bridge----bridge|   server B   |
++------+-------+                  +-------+------+
+       |eth1                              |eth1
+</pre>
+
+Each server connects Internet via interface eth0, IP is IPA & IPB.
+
+On server A, run following command
+````
+brctl addbr br0
+ip link set eth1 up
+brctl addif br0 eth1
+./EthUDP -i IPA 6000 IPB 6000 br0
+````
+
+On server B, run following command
+````
+brctl addbr br0
+ip link set eth1 up
+brctl addif br0 eth1
+./EthUDP -i IPB 6000 IPA 6000 br0
+````
+
+will create a tap tunnel interface and add to br0 internet using UDP port 6000
+
+how it works:
+* open tap raw socket, run shell `brctl add if ??? tap?` add to bridge
+* open udp socket to remote host
+* read packet from raw socket, send to udp socket
+* read packet from udp socket, send to raw socket
+
 Note:
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
@@ -85,6 +126,12 @@ If server B connect from NAT IP, please run
 ````
 ./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
 ./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
+````
+5. support internet master slave 
+Using master udp connection, switch to slave if master down
+````
+./EthUDP ... IPA portA IPB portB ... SlaveIPA SlaveportA SlaveIPB SlaveportB
+./EthUDP ... IPB portB IPA portA ... SlaveIPB SlaveportB SlaveIPA SlaveportA
 ````
 
 
