@@ -5,9 +5,8 @@
 // uncomment the following line to enable automatic tcp mss fix
 //#define FIXMSS   1
 
-// kernel use auxdata to send vlan tag, we use this to reconstructiong vlan header
+// kernel use auxdata to send vlan tag, we use auxdata to reconstructe vlan header
 #define HAVE_PACKET_AUXDATA 1
-
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,7 +37,7 @@
 #include <pthread.h>
 
 #define MAXLEN 			2048
-#define MAX_PACKET_SIZE	2048
+#define MAX_PACKET_SIZE		2048
 #define MAXFD   		64
 
 #define MODEE	0	// raw ether bridge mode
@@ -48,7 +47,6 @@
 #define max(a,b)        ((a) > (b) ? (a) : (b))
 
 #ifdef HAVE_PACKET_AUXDATA
-//#include <uapi/linux/if_packet.h>
 #define VLAN_TAG_LEN   4
 struct vlan_tag {
        u_int16_t       vlan_tpid;              /* ETH_P_8021Q */
@@ -68,19 +66,20 @@ struct _EtherHeader {
 
 typedef struct _EtherHeader EtherPacket;
 
-volatile struct sockaddr_storage remote_addr[2];
 
 int daemon_proc;            /* set nonzero by daemon_init() */
+int debug = 0;
+
 int32_t ifindex;
 int fdudp[2], fdraw;
-int transfamily;
+int transfamily[2];
 int nat[2];
-int debug = 0;
 int mode = -1;   // 0 eth bridge, 1 interface
 char mypassword [MAXLEN];
 char xor_key[MAXLEN];
 int xor_key_len = 0;
 int master_slave = 0;
+volatile struct sockaddr_storage remote_addr[2];
 volatile time_t last_pong[2];
 volatile int master_dead = 0;
 
@@ -162,7 +161,7 @@ void daemon_init(const char *pname, int facility)
 }
 
 
-int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
+int udp_server(const char *host, const char *serv, socklen_t *addrlenp, int index)
 { 	int	sockfd, n;
 	int	on = 1;
 	struct addrinfo hints, *res, *ressave;
@@ -177,7 +176,7 @@ int udp_server(const char *host, const char *serv, socklen_t *addrlenp)
 	ressave = res;
 
 	do {
-		transfamily = res->ai_family;
+		transfamily[index] = res->ai_family;
 		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 		if (sockfd < 0)
 			continue;               /* error, try next one */
@@ -202,7 +201,7 @@ int udp_xconnect(char *lhost, char*lserv, char*rhost, char*rserv, int index)
 { 	int	sockfd, n;
 	struct addrinfo hints, *res, *ressave;
 
-	sockfd = udp_server(lhost,lserv,NULL);
+	sockfd = udp_server(lhost,lserv,NULL,index);
 
 	bzero(&hints, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
@@ -222,7 +221,7 @@ int udp_xconnect(char *lhost, char*lserv, char*rhost, char*rserv, int index)
 
    	do {
    		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
-       		break;          /* success */
+       			break;          /* success */
 	} while ( (res = res->ai_next) != NULL);
 
 	if (res == NULL)        /* errno set from final connect() */
@@ -420,7 +419,7 @@ static unsigned int optlen(const u_int8_t *opt, unsigned int offset)
 		return opt[offset+1];
 }
 
-void fix_mss(u_int8_t *buf, int len)
+void fix_mss(u_int8_t *buf, int len, int index)
 {
 	u_int8_t * packet;
 	int i;
@@ -456,9 +455,9 @@ void fix_mss(u_int8_t *buf, int len)
 			if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
 				opt[i+1] == 4 ) {
 				u_int16_t newmss = 0, oldmss;
-				if ( transfamily == PF_INET )
+				if ( transfamily[index] == PF_INET )
 					newmss = 1418;
-				else if ( transfamily == PF_INET6) 
+				else if ( transfamily[index] == PF_INET6) 
 					newmss = 1398;
 				if (VLANdot1Q) newmss -=4;
 				oldmss = (opt[i+2] << 8) | opt[i+3];
@@ -497,9 +496,9 @@ void fix_mss(u_int8_t *buf, int len)
 			if (opt[i] == 2 && tcph->doff*4 - i >= 4 &&   // TCP_MSS
 				opt[i+1] == 4 ) {
 				u_int16_t newmss = 0, oldmss;
-				if ( transfamily == PF_INET )
+				if ( transfamily[index] == PF_INET )
 					newmss = 1398;
-				else if ( transfamily == PF_INET6) 
+				else if ( transfamily[index] == PF_INET6) 
 					newmss = 1378;
 				if (VLANdot1Q) newmss -=4;
 				oldmss = (opt[i+2] << 8) | opt[i+3];
@@ -671,7 +670,7 @@ void process_raw_to_udp( void) // used by mode==0 & mode==1
 
 		if( len <= 0 ) continue;
 #ifdef FIXMSS
-		fix_mss(buf + offset, len);
+		fix_mss(buf + offset, len, master_dead);
 #endif
 		if(debug) {
      			printPacket( (EtherPacket*) (buf + offset), len , "from local  rawsocket:");
@@ -754,7 +753,7 @@ void process_udp_to_raw(int index)
 		}
 
 #ifdef FIXMSS
-		fix_mss(buf, len);
+		fix_mss(buf, len, index);
 #endif
 		
 		if(debug)
