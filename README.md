@@ -1,10 +1,8 @@
-<pre>
-EthUDP
-======
-<pre>
+# EthUDP
+
 Ethernet over UDP
 
-1. mode e
+## 1. mode e
 Bridge two ethernets using UDP
 
           |-------Internet---------|
@@ -19,14 +17,18 @@ Bridge two ethernets using UDP
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
 On server A, run following command
+````
 ip link set eth1 up
 ifconfig eth1 mtu 1508
 ./EthUDP -e IPA 6000 IPB 6000 eth1
+````
 
 On server B, run following command
+````
 ip link set eth1 up
 ifconfig eth1 mtu 1508
 ./EthUDP -e IPB 6000 IPA 6000 eth1
+````
 
 will bridge eth1 of two hosts via internet using UDP port 6000
 
@@ -36,7 +38,7 @@ how it works:
 * read packet from raw socket, send to udp socket
 * read packet from udp socket, send to raw socket
 
-2. mode i
+## 2. mode i
 create a tap tunnel interface using UDP
 
        |------------Internet--------------|
@@ -51,10 +53,10 @@ create a tap tunnel interface using UDP
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
 On server A, run following command
-./EthUDP -i IPA 6000 IPB 6000 IP1 masklen
+`./EthUDP -i IPA 6000 IPB 6000 IP1 masklen`
 
 On server B, run following command
-./EthUDP -i IPB 6000 IPA 6000 IP2 masklen
+`./EthUDP -i IPB 6000 IPA 6000 IP2 masklen`
 
 will create a tap tunnel interface and setup IP1/masklen IP2/masklen via internet using UDP port 6000
 
@@ -71,8 +73,8 @@ Note:
 ethtool -K eth1 gro off
 4. support connection from NATed server
 If server B connect from NAT IP, please run
-./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
-./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
+`./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A`
+`./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B`
 
 
 常用模式：
