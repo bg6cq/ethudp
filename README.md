@@ -95,7 +95,7 @@ On server A, run following command
 brctl addbr br0
 ip link set eth1 up
 brctl addif br0 eth1
-./EthUDP -i IPA 6000 IPB 6000 br0
+./EthUDP -b IPA 6000 IPB 6000 br0
 ````
 
 On server B, run following command
@@ -103,7 +103,7 @@ On server B, run following command
 brctl addbr br0
 ip link set eth1 up
 brctl addif br0 eth1
-./EthUDP -i IPB 6000 IPA 6000 br0
+./EthUDP -b IPB 6000 IPA 6000 br0
 ````
 
 will create a tap tunnel interface and add to br0 internet using UDP port 6000
