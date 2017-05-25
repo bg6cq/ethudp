@@ -527,16 +527,16 @@ void fix_mss(u_int8_t *buf, int len)
 
 void send_udp_to_remote(u_int8_t *buf, int len, int index)     // send udp packet to remote 
 {
-	if ( nat[master_dead] ) {
+	if ( nat[index] ) {
 		char rip[200];
-		if(remote_addr[master_dead].ss_family==AF_INET) {
+		if(remote_addr[index].ss_family==AF_INET) {
 			struct sockaddr_in *r = (struct sockaddr_in *) (&remote_addr[index]);
 			if(debug) 
 				printf("%s nat mode: send len %d to %s:%d\n", stamp(), len,
 					inet_ntop(r->sin_family, (void*)&r->sin_addr,rip,200), ntohs(r->sin_port));
 			if ( r->sin_port )
 				sendto(fdudp[index], buf, len , 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
-		} else if(remote_addr[master_dead].ss_family==AF_INET6) {
+		} else if(remote_addr[index].ss_family==AF_INET6) {
 			struct sockaddr_in6 *r = (struct sockaddr_in6*) &remote_addr[index];
 			if(debug)
 				printf("%s nat mode: send len %d to [%s]:%d\n", stamp(), len,
@@ -575,11 +575,13 @@ void send_keepalive_to_udp( void) // send keepalive to remote
 			if(master_dead==0) {  // now master is OK
 				if(time(NULL)-5>last_pong[0]) { // master OK->BAD
 					master_dead = 1;
+					err_msg("master OK-->BAD\n");
 					if(debug) printf("%s master OK->BAD\n",stamp());
 				}
 			} else {  // now master is BAD
 				if(time(NULL)-5<last_pong[0]) { // master BAD->OK
 					master_dead = 0;
+					err_msg("master BAD-->OK\n");
 					if(debug) printf("%s master BAD->OK\n",stamp());
 				}
 			}
