@@ -127,7 +127,8 @@ If server B connect from NAT IP, please run
 ./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
 ./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
 ````
-5. support internet master slave 
+5. support master slave switchover
+
 Using master udp connection, switch to slave if master down
 ````
 ./EthUDP ... IPA portA IPB portB ... SlaveIPA SlaveportA SlaveIPB SlaveportB
