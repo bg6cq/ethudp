@@ -114,22 +114,26 @@ how it works:
 * read packet from raw socket, send to udp socket
 * read packet from udp socket, send to raw socket
 
-Note:
+## Note:
 1. support 802.1Q VLAN frame transport
+
+NIC MTU should set to 1504 or 1508, for single 802.1Q or double 802.1Q tag. But some NICs do not allow change the default 1500.
+
 2. support automatic tcp mss fix
 3. if your NIC support GRO, you should disable it by
 ````
 ethtool -K eth1 gro off
 ````
 4. support connection from NATed server
-If server B connect from NAT IP, please run
+
+If server A has public IP, while server B connect from NATed IP, please run (port is 0)
 ````
 ./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
 ./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
 ````
 5. support master slave switchover
 
-Using master udp connection, switch to slave if master down
+Using master udp connection, switch to slave if master down(send/recv ping/pong message 1/sec)
 ````
 ./EthUDP ... IPA portA IPB portB ... SlaveIPA SlaveportA SlaveIPB SlaveportB
 ./EthUDP ... IPB portB IPA portA ... SlaveIPB SlaveportB SlaveIPA SlaveportA
@@ -155,4 +159,3 @@ Using master udp connection, switch to slave if master down
 从公网仅仅能看到B与A的6000端口之间有UDP通信
 
 注意：密码和所有数据包均明文传输
-</pre>
