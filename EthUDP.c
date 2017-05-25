@@ -559,10 +559,10 @@ void send_keepalive_to_udp( void) // send keepalive to remote
 				Debug("send password: %s", buf);
 				len ++;
 				xor_encrypt((u_int8_t*)buf, len);
-				write(fdudp[0], buf, len);
+				send_udp_to_remote(buf,len,0);
 			}
 			if(master_slave && (nat[1]==0) ) 
-				write(fdudp[1], buf, len);
+				send_udp_to_remote(buf,len,1);
 		}
 		memcpy(buf,"PING:",5);
 		len = 5;
