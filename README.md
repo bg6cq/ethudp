@@ -5,6 +5,7 @@ Ethernet over UDP
 ## 1. mode e
 Bridge two ethernets using UDP
 
+<pre>
           |-------Internet---------|
           |                        |
      |    |                        |    |
@@ -13,6 +14,7 @@ Bridge two ethernets using UDP
 +----+----+----+              +----+----+----+
 |   server A   |              |   server B   |
 +--------------+              +--------------+
+</pre>
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
@@ -40,7 +42,7 @@ how it works:
 
 ## 2. mode i
 create a tap tunnel interface using UDP
-
+<pre>
        |------------Internet--------------|
        |                                  |
        |                                  |
@@ -49,14 +51,19 @@ create a tap tunnel interface using UDP
 +------+-------+                  +-------+------+
 |   server A   +--IP1--------IP2--+   server B   |
 +--------------+                  +--------------+
+</pre>
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
 
 On server A, run following command
-`./EthUDP -i IPA 6000 IPB 6000 IP1 masklen`
+````
+./EthUDP -i IPA 6000 IPB 6000 IP1 masklen
+````
 
 On server B, run following command
-`./EthUDP -i IPB 6000 IPA 6000 IP2 masklen`
+````
+./EthUDP -i IPB 6000 IPA 6000 IP2 masklen
+````
 
 will create a tap tunnel interface and setup IP1/masklen IP2/masklen via internet using UDP port 6000
 
@@ -70,11 +77,15 @@ Note:
 1. support 802.1Q VLAN frame transport
 2. support automatic tcp mss fix
 3. if your NIC support GRO, you should disable it by
+````
 ethtool -K eth1 gro off
+````
 4. support connection from NATed server
 If server B connect from NAT IP, please run
-`./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A`
-`./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B`
+````
+./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
+./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
+````
 
 
 常用模式：
@@ -84,9 +95,13 @@ If server B connect from NAT IP, please run
 
 具体做法为：
 1. 假定A的公网IP是 IPA，通信使用UDP 6000端口，新建的隧道接口A的IP是 ipa/24，密码为password，A上运行
+````
 ./EthUDP -i -p password IPA 6000 0.0.0.0 0 ipa 24
+````
 2. 假定B的隧道接口是ipb/24，B上运行
+````
 ./EthUDP -i -p password 0.0.0.0 0 IPA 6000 ipb 24
+````
 此后，A和B可以通过 ipa/ipb 互相通信
 
 从公网仅仅能看到B与A的6000端口之间有UDP通信
