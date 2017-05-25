@@ -712,20 +712,6 @@ void process_udp_to_raw(int index)
 
 			xor_encrypt(buf, len);
 
-			if(memcmp(buf,"PING:",5) ==0 ) {
-				if(debug) printf("ping from index %d udp\n",index);
-				memcpy(buf,"PONG:",5);
-				len = 5;
-				xor_encrypt(buf, len);
-				send_udp_to_remote(buf,len,index);
-				continue;
-			}
-
-			if(memcmp(buf,"PONG:",5) ==0 ) {
-				if(debug) printf("pong from index %d udp\n",index);
-				last_pong[index] = time(NULL);
-				continue;
-			}
 
 			if(mypassword[0]==0) {  // no password set, accept new ip and port
 				if(debug) printf("no password, accept new remote ip and port\n");
@@ -751,6 +737,22 @@ void process_udp_to_raw(int index)
 			if( len <= 0 ) continue;
 			xor_encrypt(buf, len);
 		}
+
+		if(memcmp(buf,"PING:",5) ==0 ) {
+			if(debug) printf("ping from index %d udp\n",index);
+			memcpy(buf,"PONG:",5);
+			len = 5;
+			xor_encrypt(buf, len);
+			send_udp_to_remote(buf,len,index);
+			continue;
+		}
+
+		if(memcmp(buf,"PONG:",5) ==0 ) {
+			if(debug) printf("pong from index %d udp\n",index);
+			last_pong[index] = time(NULL);
+			continue;
+		}
+
 #ifdef FIXMSS
 		fix_mss(buf, len);
 #endif
