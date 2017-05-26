@@ -82,6 +82,7 @@ volatile struct sockaddr_storage remote_addr[2];
 volatile time_t last_pong[2];
 volatile int master_dead = 0;
 volatile int slave_dead = 0;
+u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
 
 void xor_encrypt(u_int8_t * buf, int n)
 {
@@ -574,7 +575,16 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	u_int8_t buf[MAX_PACKET_SIZE];
 	int len;
 
+	static time_t lasttm;
 	while (1) {
+
+		if (time(NULL) > lasttm + 3600) {	// log ping/pong every hour
+			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
+				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
+			err_msg("slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
+				(unsigned long)ping_send[1], (unsigned long)pong_recv[1], (unsigned long)ping_recv[1], (unsigned long)pong_send[1]);
+			lasttm = time(NULL);
+		}
 		if (mypassword[0]) {
 			if (nat[0] == 0) {
 				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
@@ -590,8 +600,10 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 		len = 5;
 		xor_encrypt((u_int8_t *) buf, len);
 		send_udp_to_remote(buf, len, 0);	// send to master
+		ping_send[0]++;
 		if (master_slave) {
 			send_udp_to_remote(buf, len, 1);	// send to slave
+			ping_send[1]++;
 
 			if (master_dead == 0) {	// now master is OK
 				if (time(NULL) - 5 > last_pong[0]) {	// master OK->BAD
@@ -780,16 +792,19 @@ void process_udp_to_raw(int index)
 
 		if (memcmp(buf, "PING:", 5) == 0) {
 			Debug("ping from index %d udp", index);
+			ping_recv[index]++;
 			memcpy(buf, "PONG:", 5);
 			len = 5;
 			xor_encrypt(buf, len);
 			send_udp_to_remote(buf, len, index);
+			pong_send[index]++;
 			continue;
 		}
 
 		if (memcmp(buf, "PONG:", 5) == 0) {
 			Debug("pong from index %d udp", index);
 			last_pong[index] = time(NULL);
+			pong_recv[index]++;
 			continue;
 		}
 #ifdef FIXMSS
