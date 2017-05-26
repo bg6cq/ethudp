@@ -79,7 +79,7 @@ char xor_key[MAXLEN];
 int xor_key_len = 0;
 int master_slave = 0;
 volatile struct sockaddr_storage remote_addr[2];
-volatile time_t last_pong[2];
+volatile u_int32_t myticket, last_pong[2];
 volatile int master_dead = 0;
 volatile int slave_dead = 0;
 volatile int got_signal = 0;
@@ -580,19 +580,18 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 {
 	u_int8_t buf[MAX_PACKET_SIZE];
 	int len;
-
-	static time_t lasttm;
+	static u_int32_t lasttm;
 	while (1) {
-
-		if (got_signal || (time(NULL) > lasttm + 3600)) {	// log ping/pong every hour
-			err_msg("========================================================");
+		myticket++;
+		if (got_signal || (myticket > lasttm + 3600)) {	// log ping/pong every hour
+			err_msg("============= myticket=%d", (unsigned long)myticket);
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
 			err_msg("slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[1], (unsigned long)pong_recv[1], (unsigned long)ping_recv[1], (unsigned long)pong_send[1]);
 			ping_send[0] = ping_send[1] = ping_recv[0] = ping_recv[1] = 0;
 			pong_send[0] = pong_send[1] = pong_recv[0] = pong_recv[1] = 0;
-			lasttm = time(NULL);
+			lasttm = myticket;
 			got_signal = 0;
 		}
 		if (mypassword[0]) {
@@ -616,23 +615,23 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			ping_send[1]++;
 
 			if (master_dead == 0) {	// now master is OK
-				if (time(NULL) - 5 > last_pong[0]) {	// master OK->BAD
+				if (myticket > last_pong[0] + 5) {	// master OK->BAD
 					master_dead = 1;
 					err_msg("master OK-->BAD");
 				}
 			} else {	// now master is BAD
-				if (time(NULL) - 4 < last_pong[0]) {	// master BAD->OK
+				if (myticket < last_pong[0] + 4) {	// master BAD->OK
 					master_dead = 0;
 					err_msg("master BAD-->OK");
 				}
 			}
 			if (slave_dead == 0) {	// now slave is OK
-				if (time(NULL) - 5 > last_pong[1]) {	// slave OK->BAD
+				if (myticket > last_pong[1] + 5) {	// slave OK->BAD
 					slave_dead = 1;
 					err_msg("slave OK-->BAD");
 				}
 			} else {	// now slave is BAD
-				if (time(NULL) - 4 < last_pong[1]) {	// slave BAD->OK
+				if (myticket < last_pong[1] + 4) {	// slave BAD->OK
 					slave_dead = 0;
 					err_msg("slave BAD-->OK");
 				}
@@ -813,7 +812,7 @@ void process_udp_to_raw(int index)
 
 		if (memcmp(buf, "PONG:", 5) == 0) {
 			Debug("pong from index %d udp", index);
-			last_pong[index] = time(NULL);
+			last_pong[index] = myticket;
 			pong_recv[index]++;
 			continue;
 		}
