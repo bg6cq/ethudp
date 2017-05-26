@@ -82,7 +82,13 @@ volatile struct sockaddr_storage remote_addr[2];
 volatile time_t last_pong[2];
 volatile int master_dead = 0;
 volatile int slave_dead = 0;
-u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
+volatile int got_signal = 0;
+volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
+
+void sig_handler(int signo)
+{
+	got_signal = 1;
+}
 
 void xor_encrypt(u_int8_t * buf, int n)
 {
@@ -578,14 +584,15 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	static time_t lasttm;
 	while (1) {
 
-		if (time(NULL) > lasttm + 3600) {	// log ping/pong every hour
+		if (got_signal || (time(NULL) > lasttm + 3600)) {	// log ping/pong every hour
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
 			err_msg("slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[1], (unsigned long)pong_recv[1], (unsigned long)ping_recv[1], (unsigned long)pong_send[1]);
-			ping_send[0]=ping_send[1]=ping_recv[0]=ping_recv[1]=0;
-			pong_send[0]=pong_send[1]=pong_recv[0]=pong_recv[1]=0;
+			ping_send[0] = ping_send[1] = ping_recv[0] = ping_recv[1] = 0;
+			pong_send[0] = pong_send[1] = pong_recv[0] = pong_recv[1] = 0;
 			lasttm = time(NULL);
+			got_signal = 0;
 		}
 		if (mypassword[0]) {
 			if (nat[0] == 0) {
@@ -876,10 +883,12 @@ int open_tun(const char *dev, char **actual)
 
 void usage(void)
 {
-	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport eth? [localip localport remoteip remoteport]\n");
-	printf
-	    ("       ./EthUDP [ -d ] -i [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport ipaddress masklen [localip localport remoteip remoteport]\n");
-	printf("       ./EthUDP [ -d ] -b [ -p passwd ] [-x xor_key ] localip localport remoteip remoteport bridge [localip localport remoteip remoteport]\n");
+	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport eth? \\\n");
+	printf("                [localip localport remoteip remoteport]\n");
+	printf("       ./EthUDP [ -d ] -i [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport ipaddress masklen \\\n");
+	printf("                [localip localport remoteip remoteport]\n");
+	printf("       ./EthUDP [ -d ] -b [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport bridge \\\n");
+	printf("                [ localip localport remoteip remoteport ]\n");
 	exit(0);
 }
 
@@ -958,6 +967,7 @@ int main(int argc, char *argv[])
 				wait(NULL);	// parent wait for child
 			sleep(2);	// wait 2 second, and rerun
 		}
+		signal(SIGHUP, sig_handler);
 	}
 
 	if (mode == MODEE) {	// eth bridge mode
