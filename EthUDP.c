@@ -81,6 +81,7 @@ int master_slave = 0;
 volatile struct sockaddr_storage remote_addr[2];
 volatile time_t last_pong[2];
 volatile int master_dead = 0;
+volatile int slave_dead = 0;
 
 void xor_encrypt(u_int8_t * buf, int n)
 {
@@ -588,9 +589,9 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 		memcpy(buf, "PING:", 5);
 		len = 5;
 		xor_encrypt((u_int8_t *) buf, len);
-		send_udp_to_remote(buf, len, 0);
+		send_udp_to_remote(buf, len, 0);	// send to master
 		if (master_slave) {
-			send_udp_to_remote(buf, len, 1);
+			send_udp_to_remote(buf, len, 1);	// send to slave
 
 			if (master_dead == 0) {	// now master is OK
 				if (time(NULL) - 5 > last_pong[0]) {	// master OK->BAD
@@ -598,9 +599,20 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 					err_msg("master OK-->BAD");
 				}
 			} else {	// now master is BAD
-				if (time(NULL) - 5 < last_pong[0]) {	// master BAD->OK
+				if (time(NULL) - 4 < last_pong[0]) {	// master BAD->OK
 					master_dead = 0;
 					err_msg("master BAD-->OK");
+				}
+			}
+			if (slave_dead == 0) {	// now slave is OK
+				if (time(NULL) - 5 > last_pong[1]) {	// slave OK->BAD
+					slave_dead = 1;
+					err_msg("slave OK-->BAD");
+				}
+			} else {	// now slave is BAD
+				if (time(NULL) - 4 < last_pong[1]) {	// slave BAD->OK
+					slave_dead = 0;
+					err_msg("slave BAD-->OK");
 				}
 			}
 		}
