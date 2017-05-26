@@ -1,6 +1,6 @@
 # EthUDP
 
-Ethernet over UDP
+Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP
 
 ## Sample config
 
