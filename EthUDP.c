@@ -583,7 +583,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	static u_int32_t lasttm;
 	while (1) {
 		if (got_signal || (myticket > lasttm + 3600)) {	// log ping/pong every hour
-			err_msg("============= myticket=%d, master_slave=%d, master_dead=%d", (unsigned long)myticket, master_slave, master_dead);
+			err_msg("============= myticket=%d, master_slave=%d, master_dead=%d, slave_dead=%d", (unsigned long)myticket,
+				master_slave, master_dead, slave_dead);
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
 			err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
@@ -600,10 +601,10 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				Debug("send password: %s", buf);
 				len++;
 				xor_encrypt((u_int8_t *) buf, len);
-				send_udp_to_remote(buf, len, 0);
+				send_udp_to_remote(buf, len, 0);	// send to master
 			}
 			if (master_slave && (nat[1] == 0))
-				send_udp_to_remote(buf, len, 1);
+				send_udp_to_remote(buf, len, 1);	// send to slave
 		}
 		memcpy(buf, "PING:", 5);
 		len = 5;
