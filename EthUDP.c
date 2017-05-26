@@ -585,6 +585,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	while (1) {
 
 		if (got_signal || (time(NULL) > lasttm + 3600)) {	// log ping/pong every hour
+			err_msg("========================================================");
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
 			err_msg("slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
