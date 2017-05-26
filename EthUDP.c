@@ -583,6 +583,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
 			err_msg("slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[1], (unsigned long)pong_recv[1], (unsigned long)ping_recv[1], (unsigned long)pong_send[1]);
+			ping_send[0]=ping_send[1]=ping_recv[0]=ping_recv[1]=0;
+			pong_send[0]=pong_send[1]=pong_recv[0]=pong_recv[1]=0;
 			lasttm = time(NULL);
 		}
 		if (mypassword[0]) {
