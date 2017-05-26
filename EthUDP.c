@@ -82,7 +82,7 @@ volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];
 volatile int master_dead = 0;
 volatile int slave_dead = 0;
-volatile int got_signal = 0;
+volatile int got_signal = 1;
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
 
 void sig_handler(int signo)
@@ -582,7 +582,6 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	int len;
 	static u_int32_t lasttm;
 	while (1) {
-		myticket++;
 		if (got_signal || (myticket > lasttm + 3600)) {	// log ping/pong every hour
 			err_msg("============= myticket=%d, master_slave=%d, master_dead=%d", (unsigned long)myticket, master_slave, master_dead);
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
@@ -594,6 +593,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			lasttm = myticket;
 			got_signal = 0;
 		}
+		myticket++;
 		if (mypassword[0]) {
 			if (nat[0] == 0) {
 				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
