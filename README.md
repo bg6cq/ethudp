@@ -2,6 +2,10 @@
 
 Ethernet over UDP
 
+## Sample config
+
+[Sample config] (sample/README.md)
+
 ## 1. mode e
 Bridge two ethernets using UDP
 
