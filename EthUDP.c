@@ -77,6 +77,7 @@ int xor_key_len = 0;
 int master_slave = 0;
 int read_only = 0, write_only = 0;
 int fixmss = 0;
+int nopromisc = 0;
 volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
 volatile int master_dead = 0;
@@ -279,12 +280,13 @@ int32_t open_socket(char *ifname, int32_t * rifindex)
 	ifindex = ifr.ifr_ifindex;
 	*rifindex = ifindex;
 
-	// set promiscuous mode
-	memset(&ifr, 0, sizeof(ifr));
-	strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-	ioctl(fd, SIOCGIFFLAGS, &ifr);
-	ifr.ifr_flags |= IFF_PROMISC;
-	ioctl(fd, SIOCSIFFLAGS, &ifr);
+	if (!nopromisc) {	// set promiscuous mode
+		memset(&ifr, 0, sizeof(ifr));
+		strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+		ioctl(fd, SIOCGIFFLAGS, &ifr);
+		ifr.ifr_flags |= IFF_PROMISC;
+		ioctl(fd, SIOCSIFFLAGS, &ifr);
+	}
 
 	memset(&sll, 0xff, sizeof(sll));
 	sll.sll_family = AF_PACKET;
@@ -897,6 +899,7 @@ void usage(void)
 	printf("         -f fix mss\n");
 	printf("         -r read only of ethernet interface\n");
 	printf("         -w write only of ethernet interface\n");
+	printf("         -m do not set ethernet interface to promisc mode(mode e)\n");
 	exit(0);
 }
 
@@ -917,6 +920,8 @@ int main(int argc, char *argv[])
 			read_only = 1;
 		if (strcmp(argv[i], "-w") == 0)
 			write_only = 1;
+		if (strcmp(argv[i], "-m") == 0)
+			nopromisc = 1;
 		else if (strcmp(argv[i], "-e") == 0)
 			mode = MODEE;
 		else if (strcmp(argv[i], "-i") == 0)
@@ -964,6 +969,7 @@ int main(int argc, char *argv[])
 		printf("      fixmss = %d\n", fixmss);
 		printf("   read_only = %d\n", read_only);
 		printf("  write_only = %d\n", write_only);
+		printf("   nopromisc = %d\n", nopromisc);
 		printf("     cmd = ");
 		int n;
 		for (n = i; n < argc; n++)
