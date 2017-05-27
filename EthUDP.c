@@ -79,7 +79,7 @@ char xor_key[MAXLEN];
 int xor_key_len = 0;
 int master_slave = 0;
 volatile struct sockaddr_storage remote_addr[2];
-volatile u_int32_t myticket, last_pong[2];
+volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
 volatile int master_dead = 0;
 volatile int slave_dead = 0;
 volatile int got_signal = 1;
@@ -582,16 +582,18 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	int len;
 	static u_int32_t lasttm;
 	while (1) {
-		if (got_signal || (myticket > lasttm + 3600)) {	// log ping/pong every hour
+		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
 			err_msg("============= myticket=%d, master_slave=%d, master_dead=%d, slave_dead=%d", (unsigned long)myticket,
 				master_slave, master_dead, slave_dead);
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
 			err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[1], (unsigned long)pong_recv[1], (unsigned long)ping_recv[1], (unsigned long)pong_send[1]);
-			ping_send[0] = ping_send[1] = ping_recv[0] = ping_recv[1] = 0;
-			pong_send[0] = pong_send[1] = pong_recv[0] = pong_recv[1] = 0;
-			lasttm = myticket;
+			if (myticket >= lasttm + 3600) {
+				ping_send[0] = ping_send[1] = ping_recv[0] = ping_recv[1] = 0;
+				pong_send[0] = pong_send[1] = pong_recv[0] = pong_recv[1] = 0;
+				lasttm = myticket;
+			}
 			got_signal = 0;
 		}
 		myticket++;
@@ -606,8 +608,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			if (master_slave && (nat[1] == 0))
 				send_udp_to_remote(buf, len, 1);	// send to slave
 		}
-		memcpy(buf, "PING:", 5);
-		len = 5;
+		memcpy(buf, "PING:PING:", 10);
+		len = 10;
 		xor_encrypt((u_int8_t *) buf, len);
 		send_udp_to_remote(buf, len, 0);	// send to master
 		ping_send[0]++;
@@ -800,18 +802,18 @@ void process_udp_to_raw(int index)
 			xor_encrypt(buf, len);
 		}
 
-		if (memcmp(buf, "PING:", 5) == 0) {
+		if (memcmp(buf, "PING:PING:", 10) == 0) {
 			Debug("ping from index %d udp", index);
 			ping_recv[index]++;
-			memcpy(buf, "PONG:", 5);
-			len = 5;
+			memcpy(buf, "PONG:PONG:", 10);
+			len = 10;
 			xor_encrypt(buf, len);
 			send_udp_to_remote(buf, len, index);
 			pong_send[index]++;
 			continue;
 		}
 
-		if (memcmp(buf, "PONG:", 5) == 0) {
+		if (memcmp(buf, "PONG:PONG:", 10) == 0) {
 			Debug("pong from index %d udp", index);
 			last_pong[index] = myticket;
 			pong_recv[index]++;
