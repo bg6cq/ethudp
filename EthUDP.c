@@ -2,9 +2,6 @@
 	  by james@ustc.edu.cn 2009.04.02
 */
 
-// uncomment the following line to enable automatic tcp mss fix
-//#define FIXMSS   1
-
 // kernel use auxdata to send vlan tag, we use auxdata to reconstructe vlan header
 #define HAVE_PACKET_AUXDATA 1
 
@@ -78,6 +75,8 @@ char mypassword[MAXLEN];
 char xor_key[MAXLEN];
 int xor_key_len = 0;
 int master_slave = 0;
+int read_only = 0, write_only = 0;
+int fixmss = 0;
 volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
 volatile int master_dead = 0;
@@ -726,9 +725,10 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 
 		if (len <= 0)
 			continue;
-#ifdef FIXMSS
-		fix_mss(buf + offset, len, master_dead);
-#endif
+		if (write_only)
+			continue;	// write only
+		if (!read_only && fixmss)	// read only, no fix_mss
+			fix_mss(buf + offset, len, master_dead);
 		if (debug) {
 			printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 			if (offset)
@@ -755,14 +755,12 @@ void process_udp_to_raw(int index)
 				char rip[200];
 				if (rmt.ss_family == AF_INET) {
 					struct sockaddr_in *r = (struct sockaddr_in *)&rmt;
-					printf
-					    ("%s nat mode: len %d recv from %s:%d\n",
-					     stamp(), len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
+					Debug("nat mode: len %d recv from %s:%d\n",
+					      len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
 				} else if (rmt.ss_family == AF_INET6) {
 					struct sockaddr_in6 *r = (struct sockaddr_in6 *)&rmt;
-					printf
-					    ("%s nat mode: len %d recv from [%s]:%d\n",
-					     stamp(), len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
+					Debug("nat mode: len %d recv from [%s]:%d\n",
+					      len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 				}
 			}
 			if (len <= 0)
@@ -819,9 +817,11 @@ void process_udp_to_raw(int index)
 			pong_recv[index]++;
 			continue;
 		}
-#ifdef FIXMSS
-		fix_mss(buf, len, index);
-#endif
+
+		if (read_only)
+			continue;	// read only
+		if (!write_only && fixmss)	// write only, no fix_mss
+			fix_mss(buf, len, index);
 
 		if (debug)
 			printPacket((EtherPacket *) buf, len, "from remote udpsocket:");
@@ -886,12 +886,17 @@ int open_tun(const char *dev, char **actual)
 
 void usage(void)
 {
-	printf("Usage: ./EthUDP [ -d ] -e [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport eth? \\\n");
-	printf("                [localip localport remoteip remoteport]\n");
-	printf("       ./EthUDP [ -d ] -i [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport ipaddress masklen \\\n");
-	printf("                [localip localport remoteip remoteport]\n");
-	printf("       ./EthUDP [ -d ] -b [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport bridge \\\n");
-	printf("                [ localip localport remoteip remoteport ]\n");
+	printf("Usage:\n");
+	printf("./EthUDP -e [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport eth? \\\n");
+	printf("            [ localip localport remoteip remoteport ]\n");
+	printf("./EthUDP -i [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport ipaddress masklen \\\n");
+	printf("            [ localip localport remoteip remoteport ]\n");
+	printf("./EthUDP -b [ -p passwd ] [ -x xor_key ] localip localport remoteip remoteport bridge \\\n");
+	printf("            [ localip localport remoteip remoteport ]\n");
+	printf("         -d debug\n");
+	printf("         -f fix mss\n");
+	printf("         -r read only of ethernet interface\n");
+	printf("         -w write only of ethernet interface\n");
 	exit(0);
 }
 
@@ -906,6 +911,12 @@ int main(int argc, char *argv[])
 			usage();
 		if (strcmp(argv[i], "-d") == 0)
 			debug = 1;
+		if (strcmp(argv[i], "-f") == 0)
+			fixmss = 1;
+		if (strcmp(argv[i], "-r") == 0)
+			read_only = 1;
+		if (strcmp(argv[i], "-w") == 0)
+			write_only = 1;
 		else if (strcmp(argv[i], "-e") == 0)
 			mode = MODEE;
 		else if (strcmp(argv[i], "-i") == 0)
@@ -950,6 +961,9 @@ int main(int argc, char *argv[])
 		printf("     xor_key = %s\n", xor_key);
 		printf("     key_len = %d\n", xor_key_len);
 		printf("master_slave = %d\n", master_slave);
+		printf("      fixmss = %d\n", fixmss);
+		printf("   read_only = %d\n", read_only);
+		printf("  write_only = %d\n", write_only);
 		printf("     cmd = ");
 		int n;
 		for (n = i; n < argc; n++)
