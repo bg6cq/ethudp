@@ -142,6 +142,10 @@ Using master udp connection, switch to slave if master down(send/recv ping/pong 
 ./EthUDP ... IPA portA IPB portB ... SlaveIPA SlaveportA SlaveIPB SlaveportB
 ./EthUDP ... IPB portB IPA portA ... SlaveIPB SlaveportB SlaveIPA SlaveportA
 ````
+6. support AES-128 encrypt/decrypt UDP traffic
+````
+./EthUDP ... -enc aes -k aes_key ...
+````
 
 
 常用模式：
