@@ -345,6 +345,7 @@ void xor_encrypt(u_int8_t * buf, int n)
 		buf[i] = buf[i] ^ enc_key[i % enc_key_len];
 }
 
+#ifdef ENABLE_AES
 void aes_encrypt(u_int8_t * buf, int *len)
 {
 	static int key_init = 0;
@@ -421,6 +422,7 @@ void aes_decrypt(u_int8_t * buf, int *len)
 	Debug("after aes decrypt len=%d", *len);
 #endif
 }
+#endif
 
 void do_encrypt(u_int8_t * buf, int *len)
 {
