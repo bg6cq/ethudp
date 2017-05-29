@@ -265,6 +265,12 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 
 	n = 40 * 1024 * 1024;
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
+	if(debug) {
+		socklen_t ln;
+		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
+			Debug("UDP socket RCVBUF setting to %d\n", n);
+		}
+	}
 
 	return (sockfd);
 }
@@ -278,6 +284,7 @@ int32_t open_socket(char *ifname, int32_t * rifindex)
 	int32_t ifindex;
 	struct ifreq ifr;
 	struct sockaddr_ll sll;
+	int n;
 
 	int32_t fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (fd == -1)
@@ -337,6 +344,15 @@ int32_t open_socket(char *ifname, int32_t * rifindex)
 #endif				/* HAVE_PACKET_AUXDATA */
 
 	Debug("%s opened (fd=%d interface=%d)", ifname, fd, ifindex);
+
+	n = 40 * 1024 * 1024;
+	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
+	if(debug) {
+		socklen_t ln;
+		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
+			Debug("RAW socket RCVBUF setting to %d\n", n);
+		}
+	}
 
 	return fd;
 }
@@ -1031,6 +1047,15 @@ int open_tun(const char *dev, char **actual)
 	size = strlen(ifr.ifr_name) + 1;
 	*actual = (char *)malloc(size);
 	memcpy(*actual, ifr.ifr_name, size);
+	int n = 40 * 1024 * 1024;
+	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
+	if(debug) {
+		socklen_t ln;
+		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
+			Debug("RAW socket RCVBUF setting to %d", n);
+		} else 
+			Debug("RAW socket getopt error");
+	}
 	return fd;
 }
 
