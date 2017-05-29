@@ -263,6 +263,9 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 
 	freeaddrinfo(ressave);
 
+	n = 40 * 1024 * 1024;
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
+
 	return (sockfd);
 }
 
@@ -1063,7 +1066,7 @@ void do_benchmark(void)
 	int len;
 	struct timeval start_tm, end_tm;
 	gettimeofday(&start_tm, NULL);
-	fprintf(stderr, "benchmarking for %d packets, %d size...\n",BENCHCNT,PKT_LEN);
+	fprintf(stderr, "benchmarking for %d packets, %d size...\n", BENCHCNT, PKT_LEN);
 	fprintf(stderr, "enc_algorithm = %s\n", enc_algorithm == XOR ? "XOR" : (enc_algorithm == AES ? "AES" : "none"));
 	fprintf(stderr, "      enc_key = %s\n", enc_key);
 	fprintf(stderr, "      key_len = %d\n", enc_key_len);
@@ -1076,11 +1079,11 @@ void do_benchmark(void)
 			break;
 	}
 	gettimeofday(&end_tm, NULL);
-	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * BENCHCNT + end_tm.tv_usec) - start_tm.tv_usec;
+	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000L + end_tm.tv_usec) - start_tm.tv_usec;
 	tspan = tspan / 1000000L;
 	fprintf(stderr, "%0.3f seconds\n", tspan);
-	fprintf(stderr, "PPS: %.0f PKT/S\n", (float)BENCHCNT/ tspan);
-	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (PKT_LEN) * (float)BENCHCNT/ tspan);
+	fprintf(stderr, "PPS: %.0f PKT/S\n", (float)BENCHCNT / tspan);
+	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (PKT_LEN) * (float)BENCHCNT / tspan);
 	exit(0);
 }
 
