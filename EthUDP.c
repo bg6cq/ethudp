@@ -1048,7 +1048,39 @@ void usage(void)
 	printf("         -f    enable fix mss\n");
 	printf("         -r    read only of ethernet interface\n");
 	printf("         -w    write only of ethernet interface\n");
+	printf("         -B    benchmark\n");
 	printf("         -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
+	exit(0);
+}
+
+#define BENCHCNT 300000
+#define PKT_LEN 1500
+
+void do_benchmark(void)
+{
+	u_int8_t buf[MAX_PACKET_SIZE];
+	unsigned long int pkt_cnt;
+	int len;
+	struct timeval start_tm, end_tm;
+	gettimeofday(&start_tm, NULL);
+	fprintf(stderr, "benchmarking for %d packets, %d size...\n",BENCHCNT,PKT_LEN);
+	fprintf(stderr, "enc_algorithm = %s\n", enc_algorithm == XOR ? "XOR" : (enc_algorithm == AES ? "AES" : "none"));
+	fprintf(stderr, "      enc_key = %s\n", enc_key);
+	fprintf(stderr, "      key_len = %d\n", enc_key_len);
+	pkt_cnt = BENCHCNT;
+	while (1) {
+		len = PKT_LEN;
+		do_encrypt(buf, &len);
+		pkt_cnt--;
+		if (pkt_cnt == 0)
+			break;
+	}
+	gettimeofday(&end_tm, NULL);
+	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * BENCHCNT + end_tm.tv_usec) - start_tm.tv_usec;
+	tspan = tspan / 1000000L;
+	fprintf(stderr, "%0.3f seconds\n", tspan);
+	fprintf(stderr, "PPS: %.0f PKT/S\n", (float)BENCHCNT/ tspan);
+	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (PKT_LEN) * (float)BENCHCNT/ tspan);
 	exit(0);
 }
 
@@ -1077,6 +1109,8 @@ int main(int argc, char *argv[])
 			write_only = 1;
 		else if (strcmp(argv[i], "-nopromisc") == 0)
 			nopromisc = 1;
+		else if (strcmp(argv[i], "-B") == 0)
+			do_benchmark();
 		else if (strcmp(argv[i], "-p") == 0) {
 			i++;
 			if (argc - i <= 0)
