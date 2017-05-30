@@ -47,7 +47,7 @@
 #define XOR 1
 
 //#define DEBUGPINGPONG 1
-#define DEBUGSSL      1
+//#define DEBUGSSL      1
 
 #ifdef ENABLE_OPENSSL
 #include <openssl/evp.h>
