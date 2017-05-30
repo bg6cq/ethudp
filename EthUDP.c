@@ -5,8 +5,8 @@
 // kernel use auxdata to send vlan tag, we use auxdata to reconstructe vlan header
 #define HAVE_PACKET_AUXDATA 1
 
-// enable AES encrypt/decrypt support
-#define ENABLE_AES 1
+// enable OPENSSL encrypt/decrypt support
+#define ENABLE_OPENSSL 1
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,14 +47,15 @@
 #define XOR 1
 
 //#define DEBUGPINGPONG 1
-//#define DEBUGAES      1
+#define DEBUGSSL      1
 
-#ifdef ENABLE_AES
-#include <openssl/aes.h>
-#define AES 2
-#define AES_PAD 18
+#ifdef ENABLE_OPENSSL
+#include <openssl/evp.h>
+#define AES_128 2
+#define AES_192 3
+#define AES_256 3
 #else
-#define AES_PAD 0
+#define EVP_MAX_BLOCK_LENGTH 0
 #endif
 
 #define max(a,b)        ((a) > (b) ? (a) : (b))
@@ -90,6 +91,7 @@ int mode = -1;			// 0 eth bridge, 1 interface, 2 bridge
 char mypassword[MAXLEN];
 int enc_algorithm;
 unsigned char enc_key[MAXLEN];
+unsigned char enc_iv[EVP_MAX_IV_LENGTH];
 int enc_key_len = 0;
 int master_slave = 0;
 int read_only = 0, write_only = 0;
@@ -265,7 +267,7 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 
 	n = 40 * 1024 * 1024;
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
-	if(debug) {
+	if (debug) {
 		socklen_t ln;
 		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
 			Debug("UDP socket RCVBUF setting to %d\n", n);
@@ -347,7 +349,7 @@ int32_t open_socket(char *ifname, int32_t * rifindex)
 
 	n = 40 * 1024 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
-	if(debug) {
+	if (debug) {
 		socklen_t ln;
 		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
 			Debug("RAW socket RCVBUF setting to %d\n", n);
@@ -357,122 +359,100 @@ int32_t open_socket(char *ifname, int32_t * rifindex)
 	return fd;
 }
 
-void xor_encrypt(u_int8_t * buf, int n)
+int xor_encrypt(u_int8_t * buf, int n, u_int8_t * nbuf)
 {
 	int i;
 	for (i = 0; i < n; i++)
-		buf[i] = buf[i] ^ enc_key[i % enc_key_len];
+		nbuf[i] = buf[i] ^ enc_key[i % enc_key_len];
+	return n;
 }
 
-#ifdef ENABLE_AES
-void aes_encrypt(u_int8_t * buf, int *len)
+#ifdef ENABLE_OPENSSL
+int openssl_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
 	static int key_init = 0;
-	static AES_KEY key;
-	int i;
-	u_int16_t *packet_len, new_len;
-	u_int8_t nbuf[MAX_PACKET_SIZE + AES_PAD];
-	if (*len >= MAX_PACKET_SIZE)
-		*len = MAX_PACKET_SIZE;
-	memcpy(nbuf, buf, *len);
-#ifdef DEBUGAES
-	Debug("aes encrypt len=%d", *len);
-#endif
-	i = *len % 16;
-	if (i == 0) {
-		packet_len = (u_int16_t *) (nbuf + *len + 14);
-		new_len = *len + 16;
-	} else if (i == 15) {
-		packet_len = (u_int16_t *) (nbuf + *len + 15);
-		new_len = *len + 17;
-	} else {
-		packet_len = (u_int16_t *) (nbuf + *len + (14 - i));
-		new_len = *len + 16 - i;
-	}
-	*packet_len = *len;
-	*len = new_len;
-#ifdef DEBUGAES
-	Debug("packet_len=%d len=%d", (char *)packet_len - (char *)nbuf, *len);
+	static EVP_CIPHER_CTX ctx;
+	int outlen1, outlen2;
+#ifdef DEBUGSSL
+	Debug("aes encrypt len=%d", len);
 #endif
 	if (!key_init) {
-		AES_set_encrypt_key(enc_key, 128, &key);
+		if (enc_algorithm == AES_128)
+			EVP_EncryptInit(&ctx, EVP_aes_128_cbc(), enc_key, enc_iv);
+		else if (enc_algorithm == AES_192)
+			EVP_EncryptInit(&ctx, EVP_aes_192_cbc(), enc_key, enc_iv);
+		else if (enc_algorithm == AES_256)
+			EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), enc_key, enc_iv);
 		key_init = 1;
 	}
-	for (i = 0; i < *len / 16; i++)
-		AES_ecb_encrypt(nbuf + i * 16, buf + i * 16, &key, AES_ENCRYPT);
-#ifdef DEBUGAES
-	Debug("after aes encrypt len=%d", *len);
+	EVP_EncryptUpdate(&ctx, nbuf, &outlen1, buf, len);
+	EVP_EncryptFinal(&ctx, nbuf + outlen1, &outlen2);
+	len = outlen1 + outlen2;
+
+#ifdef DEBUGSSL
+	Debug("after aes encrypt len=%d", len);
 #endif
+	return len;
 }
 
-void aes_decrypt(u_int8_t * buf, int *len)
+int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
 
 	static int key_init = 0;
-	static AES_KEY key;
-	int i;
-	u_int16_t *packet_len;
-	u_int8_t nbuf[MAX_PACKET_SIZE + AES_PAD];
-	memcpy(nbuf, buf, *len);
-
-#ifdef DEBUGAES
-	Debug("aes decrypt len=%d", *len);
+	static EVP_CIPHER_CTX ctx;
+	int outlen1, outlen2;
+#ifdef DEBUGSSL
+	Debug("aes decrypt len=%d", len);
 #endif
-	if (*len >= MAX_PACKET_SIZE + AES_PAD)
-		*len = MAX_PACKET_SIZE + AES_PAD;
 
 	if (!key_init) {
-		AES_set_decrypt_key(enc_key, 128, &key);
+		if (enc_algorithm == AES_128)
+			EVP_DecryptInit(&ctx, EVP_aes_128_cbc(), enc_key, enc_iv);
+		else if (enc_algorithm == AES_192)
+			EVP_DecryptInit(&ctx, EVP_aes_192_cbc(), enc_key, enc_iv);
+		else if (enc_algorithm == AES_256)
+			EVP_DecryptInit(&ctx, EVP_aes_256_cbc(), enc_key, enc_iv);
 		key_init = 1;
 	}
-	if (*len % 16 != 0) {
-		Debug("ase_decrypt len%16 !=0!!!!!");
-		*len = 0;
-		return;
-	}
-
-	for (i = 0; i < *len / 16; i++)
-		AES_ecb_encrypt(nbuf + i * 16, buf + i * 16, &key, AES_DECRYPT);
-	packet_len = (u_int16_t *) (buf + *len - 2);
-	*len = *packet_len;
-	if (*len >= MAX_PACKET_SIZE)
-		*len = MAX_PACKET_SIZE;
-#ifdef DEBUGAES
-	Debug("after aes decrypt len=%d", *len);
+	if (EVP_DecryptUpdate(&ctx, nbuf, &outlen1, buf, len) != 1 || EVP_DecryptFinal(&ctx, nbuf + outlen1, &outlen2) != 1)
+		len = 0;
+	else
+		len = outlen1 + outlen2;
+#ifdef DEBUGSSL
+	Debug("after aes decrypt len=%d", len);
 #endif
+	return len;
 }
 #endif
 
-void do_encrypt(u_int8_t * buf, int *len)
+int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
 	if (enc_key_len <= 0)
-		return;
-	if (enc_algorithm == XOR) {
-		xor_encrypt(buf, *len);
-		return;
-	}
-#ifdef ENABLE_AES
-	if (enc_algorithm == AES) {
-		aes_encrypt(buf, len);
-		return;
-	}
+		return 0;	// you should not call me!
+	if (enc_algorithm == XOR)
+		return xor_encrypt(buf, len, nbuf);
+#ifdef ENABLE_OPENSSL
+	if ((enc_algorithm == AES_128)
+	    || (enc_algorithm == AES_192)
+	    || (enc_algorithm == AES_256))
+		return openssl_encrypt(buf, len, nbuf);
 #endif
+	return 0;
 }
 
-void do_decrypt(u_int8_t * buf, int *len)
+int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
 	if (enc_key_len <= 0)
-		return;
-	if (enc_algorithm == XOR) {
-		xor_encrypt(buf, *len);
-		return;
-	}
-#ifdef ENABLE_AES
-	if (enc_algorithm == AES) {
-		aes_decrypt(buf, len);
-		return;
-	}
+		return 0;	// you should not call me!
+	if (enc_algorithm == XOR)
+		return xor_encrypt(buf, len, nbuf);
+#ifdef ENABLE_OPENSSL
+	if ((enc_algorithm == AES_128)
+	    || (enc_algorithm == AES_192)
+	    || (enc_algorithm == AES_256))
+		return openssl_decrypt(buf, len, nbuf);
 #endif
+	return 0;
 }
 
 char *stamp(void)
@@ -724,7 +704,9 @@ void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet t
 
 void send_keepalive_to_udp(void)	// send keepalive to remote  
 {
-	u_int8_t buf[MAX_PACKET_SIZE + AES_PAD];
+	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t *pbuf;
 	int len;
 	static u_int32_t lasttm;
 	while (1) {
@@ -748,19 +730,27 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
 				Debug("send password: %s", buf);
 				len++;
-				do_encrypt((u_int8_t *) buf, &len);
-				send_udp_to_remote(buf, len, 0);	// send to master
+				if (enc_key_len > 0) {
+					len = do_encrypt((u_int8_t *) buf, len, nbuf);
+					pbuf = nbuf;
+				} else
+					pbuf = buf;
+				send_udp_to_remote(pbuf, len, 0);	// send to master
 			}
 			if (master_slave && (nat[1] == 0))
-				send_udp_to_remote(buf, len, 1);	// send to slave
+				send_udp_to_remote(pbuf, len, 1);	// send to slave
 		}
 		memcpy(buf, "PING:PING:", 10);
 		len = 10;
-		do_encrypt((u_int8_t *) buf, &len);
-		send_udp_to_remote(buf, len, 0);	// send to master
+		if (enc_key_len > 0) {
+			len = do_encrypt((u_int8_t *) buf, len, nbuf);
+			pbuf = nbuf;
+		} else
+			pbuf = buf;
+		send_udp_to_remote(pbuf, len, 0);	// send to master
 		ping_send[0]++;
 		if (master_slave) {
-			send_udp_to_remote(buf, len, 1);	// send to slave
+			send_udp_to_remote(pbuf, len, 1);	// send to slave
 			ping_send[1]++;
 
 			if (master_dead == 0) {	// now master is OK
@@ -792,7 +782,9 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 
 void process_raw_to_udp(void)	// used by mode==0 & mode==1
 {
-	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN + AES_PAD];
+	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t nbuf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t *pbuf;
 	int len;
 	int offset = 0;
 
@@ -882,9 +874,13 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				printf("offset=%d\n", offset);
 		}
 
-		do_encrypt(buf + offset, &len);
+		if (enc_key_len > 0) {
+			len = do_encrypt((u_int8_t *) buf + offset, len, nbuf);
+			pbuf = nbuf;
+		} else
+			pbuf = buf + offset;
 
-		send_udp_to_remote(buf + offset, len, master_dead);
+		send_udp_to_remote(pbuf, len, master_dead);
 	}
 }
 
@@ -905,7 +901,9 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 
 void process_udp_to_raw(int index)
 {
-	u_int8_t buf[MAX_PACKET_SIZE + AES_PAD];
+	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t *pbuf;
 	int len;
 
 	while (1) {		// read from remote udp
@@ -927,20 +925,25 @@ void process_udp_to_raw(int index)
 			}
 			if (len <= 0)
 				continue;
-			do_decrypt(buf, &len);
+			if (enc_key_len > 0) {
+				len = do_decrypt((u_int8_t *) buf, len, nbuf);
+				pbuf = nbuf;
+			} else
+				pbuf = buf;
+
 			if (len <= 0)
 				continue;
 
 			if (mypassword[0] == 0) {	// no password set, accept new ip and port
 				Debug("no password, accept new remote ip and port");
 				save_remote_addr(&rmt, sock_len, index);
-				if (memcmp(buf, "PASSWORD:", 9) == 0)	// got password packet, skip this packet
+				if (memcmp(pbuf, "PASSWORD:", 9) == 0)	// got password packet, skip this packet
 					continue;
 			} else {
-				if (memcmp(buf, "PASSWORD:", 9) == 0) {	// got password packet
+				if (memcmp(pbuf, "PASSWORD:", 9) == 0) {	// got password packet
 					Debug("password packet from remote %s", buf);
-					if ((memcmp(buf + 9, mypassword, strlen(mypassword)) == 0)
-					    && (*(buf + 9 + strlen(mypassword))
+					if ((memcmp(pbuf + 9, mypassword, strlen(mypassword)) == 0)
+					    && (*(pbuf + 9 + strlen(mypassword))
 						== 0)) {
 						Debug("password ok");
 						save_remote_addr(&rmt, sock_len, index);
@@ -957,25 +960,35 @@ void process_udp_to_raw(int index)
 			len = recv(fdudp[index], buf, MAX_PACKET_SIZE, 0);
 			if (len <= 0)
 				continue;
-			do_decrypt(buf, &len);
+			if (enc_key_len > 0) {
+				len = do_decrypt((u_int8_t *) buf, len, nbuf);
+				pbuf = nbuf;
+			} else
+				pbuf = buf;
+
 			if (len <= 0)
 				continue;
 		}
 
-		if (memcmp(buf, "PING:PING:", 10) == 0) {
+		if (memcmp(pbuf, "PING:PING:", 10) == 0) {
 #ifdef DEBUGPINGPONG
 			Debug("ping from index %d udp", index);
 #endif
 			ping_recv[index]++;
 			memcpy(buf, "PONG:PONG:", 10);
 			len = 10;
-			do_encrypt(buf, &len);
-			send_udp_to_remote(buf, len, index);
+			if (enc_key_len > 0) {
+				len = do_encrypt((u_int8_t *) buf, len, nbuf);
+				pbuf = nbuf;
+			} else
+				pbuf = buf;
+
+			send_udp_to_remote(pbuf, len, index);
 			pong_send[index]++;
 			continue;
 		}
 
-		if (memcmp(buf, "PONG:PONG:", 10) == 0) {
+		if (memcmp(pbuf, "PONG:PONG:", 10) == 0) {
 #ifdef DEBUGPINGPONG
 			Debug("pong from index %d udp", index);
 #endif
@@ -987,19 +1000,19 @@ void process_udp_to_raw(int index)
 		if (read_only)
 			continue;	// read only
 		if (!write_only && fixmss)	// write only, no fix_mss
-			fix_mss(buf, len, index);
+			fix_mss(pbuf, len, index);
 
 		if (debug)
-			printPacket((EtherPacket *) buf, len, "from remote udpsocket:");
+			printPacket((EtherPacket *) pbuf, len, "from remote udpsocket:");
 		if (mode == MODEE) {
 			struct sockaddr_ll sll;
 			memset(&sll, 0, sizeof(sll));
 			sll.sll_family = AF_PACKET;
 			sll.sll_protocol = htons(ETH_P_ALL);
 			sll.sll_ifindex = ifindex;
-			sendto(fdraw, buf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
+			sendto(fdraw, pbuf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
 		} else if ((mode == MODEI) || (mode == MODEB))
-			write(fdraw, buf, len);
+			write(fdraw, pbuf, len);
 	}
 }
 
@@ -1049,11 +1062,11 @@ int open_tun(const char *dev, char **actual)
 	memcpy(*actual, ifr.ifr_name, size);
 	int n = 40 * 1024 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
-	if(debug) {
+	if (debug) {
 		socklen_t ln;
 		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
 			Debug("RAW socket RCVBUF setting to %d", n);
-		} else 
+		} else
 			Debug("RAW socket getopt error");
 	}
 	return fd;
@@ -1070,7 +1083,7 @@ void usage(void)
 	printf("            [ localip localport remoteip remoteport ]\n");
 	printf("     options:\n");
 	printf("         -p password\n");
-	printf("         -enc [ xor | aes ]\n");
+	printf("         -enc [ xor | aes-128 | aes-192 | aes-256 ]\n");
 	printf("         -k key_string\n");
 	printf("         -d    enable debug\n");
 	printf("         -f    enable fix mss\n");
@@ -1087,18 +1100,21 @@ void usage(void)
 void do_benchmark(void)
 {
 	u_int8_t buf[MAX_PACKET_SIZE];
+	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
 	unsigned long int pkt_cnt;
 	int len;
 	struct timeval start_tm, end_tm;
 	gettimeofday(&start_tm, NULL);
 	fprintf(stderr, "benchmarking for %d packets, %d size...\n", BENCHCNT, PKT_LEN);
-	fprintf(stderr, "enc_algorithm = %s\n", enc_algorithm == XOR ? "XOR" : (enc_algorithm == AES ? "AES" : "none"));
+	fprintf(stderr, "enc_algorithm = %s\n",
+		enc_algorithm == XOR ? "xor" : enc_algorithm == AES_128 ? "aes-128" : enc_algorithm == AES_192 ? "aes-192" : enc_algorithm ==
+		AES_256 ? "aes-256" : "none");
 	fprintf(stderr, "      enc_key = %s\n", enc_key);
 	fprintf(stderr, "      key_len = %d\n", enc_key_len);
 	pkt_cnt = BENCHCNT;
 	while (1) {
 		len = PKT_LEN;
-		do_encrypt(buf, &len);
+		len = do_encrypt(buf, len, nbuf);
 		pkt_cnt--;
 		if (pkt_cnt == 0)
 			break;
@@ -1150,8 +1166,12 @@ int main(int argc, char *argv[])
 				usage();
 			if (strcmp(argv[i], "xor") == 0)
 				enc_algorithm = XOR;
-			else if (strcmp(argv[i], "aes") == 0)
-				enc_algorithm = AES;
+			else if (strcmp(argv[i], "aes-128") == 0)
+				enc_algorithm = AES_128;
+			else if (strcmp(argv[i], "aes-192") == 0)
+				enc_algorithm = AES_192;
+			else if (strcmp(argv[i], "aes-256") == 0)
+				enc_algorithm = AES_256;
 		} else if (strcmp(argv[i], "-k") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1183,7 +1203,9 @@ int main(int argc, char *argv[])
 		printf("        debug = 1\n");
 		printf("         mode = %d (0 raw eth bridge, 1 interface, 2 bridge)\n", mode);
 		printf("     password = %s\n", mypassword);
-		printf("enc_algorithm = %s\n", enc_algorithm == XOR ? "XOR" : (enc_algorithm == AES ? "AES" : "none"));
+		printf("enc_algorithm = %s\n",
+		       enc_algorithm == XOR ? "xor" : enc_algorithm == AES_128 ? "aes-128" : enc_algorithm == AES_192 ? "aes-192" : enc_algorithm ==
+		       AES_256 ? "aes-256" : "none");
 		printf("      enc_key = %s\n", enc_key);
 		printf("      key_len = %d\n", enc_key_len);
 		printf(" master_slave = %d\n", master_slave);
