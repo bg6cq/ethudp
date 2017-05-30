@@ -1107,7 +1107,7 @@ void do_benchmark(void)
 	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000L + end_tm.tv_usec) - start_tm.tv_usec;
 	tspan = tspan / 1000000L;
 	fprintf(stderr, "%0.3f seconds\n", tspan);
-	fprintf(stderr, "PPS: %.0f PKT/S\n", (float)BENCHCNT / tspan);
+	fprintf(stderr, "PPS: %.0f PKT/S, %.0f Byte/S\n", (float)BENCHCNT / tspan, 1.0 * (PKT_LEN) * (float)BENCHCNT / tspan);
 	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (PKT_LEN) * (float)BENCHCNT / tspan);
 	exit(0);
 }
