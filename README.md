@@ -6,6 +6,13 @@ Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP
 
 [Sample config](sample/README.md)
 
+## Increasing Linux kernel network buffers
+
+For better performance, increase the UDP receive buffer size from 128K to 32MB
+````
+sysctl -w net.core.rmem_max=33554432
+````
+
 ## 1. mode e
 Bridge two ethernets using UDP
 
