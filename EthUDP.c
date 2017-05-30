@@ -930,6 +930,7 @@ void process_udp_to_raw(int index)
 			if (len <= 0)
 				continue;
 
+			nbuf[len] = 0;
 			if (mypassword[0] == 0) {	// no password set, accept new ip and port
 				Debug("no password, accept new remote ip and port");
 				save_remote_addr(&rmt, sock_len, index);
@@ -937,7 +938,7 @@ void process_udp_to_raw(int index)
 					continue;
 			} else {
 				if (memcmp(pbuf, "PASSWORD:", 9) == 0) {	// got password packet
-					Debug("password packet from remote %s", buf);
+					Debug("password packet from remote %s", pbuf);
 					if ((memcmp(pbuf + 9, mypassword, strlen(mypassword)) == 0)
 					    && (*(pbuf + 9 + strlen(mypassword))
 						== 0)) {
@@ -961,7 +962,6 @@ void process_udp_to_raw(int index)
 				pbuf = nbuf;
 			} else
 				pbuf = buf;
-
 			if (len <= 0)
 				continue;
 		}
@@ -978,7 +978,6 @@ void process_udp_to_raw(int index)
 				pbuf = nbuf;
 			} else
 				pbuf = buf;
-
 			send_udp_to_remote(pbuf, len, index);
 			pong_send[index]++;
 			continue;
