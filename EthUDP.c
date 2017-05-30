@@ -370,22 +370,18 @@ int xor_encrypt(u_int8_t * buf, int n, u_int8_t * nbuf)
 #ifdef ENABLE_OPENSSL
 int openssl_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
-	static int key_init = 0;
-	static EVP_CIPHER_CTX ctx;
+	EVP_CIPHER_CTX ctx;
 	int outlen1, outlen2;
 #ifdef DEBUGSSL
 	Debug("aes encrypt len=%d", len);
 #endif
-	if (!key_init) {
-		EVP_CIPHER_CTX_init(&ctx);
-		if (enc_algorithm == AES_128)
-			EVP_EncryptInit(&ctx, EVP_aes_128_cbc(), enc_key, enc_iv);
-		else if (enc_algorithm == AES_192)
-			EVP_EncryptInit(&ctx, EVP_aes_192_cbc(), enc_key, enc_iv);
-		else if (enc_algorithm == AES_256)
-			EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), enc_key, enc_iv);
-		key_init = 1;
-	}
+	EVP_CIPHER_CTX_init(&ctx);
+	if (enc_algorithm == AES_128)
+		EVP_EncryptInit(&ctx, EVP_aes_128_cbc(), enc_key, enc_iv);
+	else if (enc_algorithm == AES_192)
+		EVP_EncryptInit(&ctx, EVP_aes_192_cbc(), enc_key, enc_iv);
+	else if (enc_algorithm == AES_256)
+		EVP_EncryptInit(&ctx, EVP_aes_256_cbc(), enc_key, enc_iv);
 	EVP_EncryptUpdate(&ctx, nbuf, &outlen1, buf, len);
 	EVP_EncryptFinal(&ctx, nbuf + outlen1, &outlen2);
 	len = outlen1 + outlen2;
@@ -393,7 +389,6 @@ int openssl_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 #ifdef DEBUGSSL
 	Debug("after aes encrypt len=%d", len);
 #endif
-	key_init =0;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 	return len;
 }
@@ -401,23 +396,19 @@ int openssl_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
 
-	static int key_init = 0;
-	static EVP_CIPHER_CTX ctx;
+	EVP_CIPHER_CTX ctx;
 	int outlen1, outlen2;
 #ifdef DEBUGSSL
 	Debug("aes decrypt len=%d", len);
 #endif
 
-	if (!key_init) {
-		EVP_CIPHER_CTX_init(&ctx);
-		if (enc_algorithm == AES_128)
-			EVP_DecryptInit(&ctx, EVP_aes_128_cbc(), enc_key, enc_iv);
-		else if (enc_algorithm == AES_192)
-			EVP_DecryptInit(&ctx, EVP_aes_192_cbc(), enc_key, enc_iv);
-		else if (enc_algorithm == AES_256)
-			EVP_DecryptInit(&ctx, EVP_aes_256_cbc(), enc_key, enc_iv);
-		key_init = 1;
-	}
+	EVP_CIPHER_CTX_init(&ctx);
+	if (enc_algorithm == AES_128)
+		EVP_DecryptInit(&ctx, EVP_aes_128_cbc(), enc_key, enc_iv);
+	else if (enc_algorithm == AES_192)
+		EVP_DecryptInit(&ctx, EVP_aes_192_cbc(), enc_key, enc_iv);
+	else if (enc_algorithm == AES_256)
+		EVP_DecryptInit(&ctx, EVP_aes_256_cbc(), enc_key, enc_iv);
 	if (EVP_DecryptUpdate(&ctx, nbuf, &outlen1, buf, len) != 1 || EVP_DecryptFinal(&ctx, nbuf + outlen1, &outlen2) != 1)
 		len = 0;
 	else
@@ -425,7 +416,6 @@ int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 #ifdef DEBUGSSL
 	Debug("after aes decrypt len=%d", len);
 #endif
-	key_init =0;
 	EVP_CIPHER_CTX_cleanup(&ctx);
 	return len;
 }
