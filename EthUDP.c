@@ -417,7 +417,7 @@ int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 	if (EVP_DecryptUpdate(&ctx, nbuf, &outlen1, buf, len) != 1 || EVP_DecryptFinal(&ctx, nbuf + outlen1, &outlen2) != 1)
 		len = 0;
 	else
-		len = outlen1 + outlen2;
+		len = outlen2;
 #ifdef DEBUGSSL
 	Debug("after aes decrypt len=%d", len);
 #endif
