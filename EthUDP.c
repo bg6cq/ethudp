@@ -745,21 +745,23 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			pbuf = buf;
 		send_udp_to_remote(pbuf, len, 0);	// send to master
 		ping_send[0]++;
+
+		if (master_dead == 0) {	// now master is OK
+			if (myticket > last_pong[0] + 5) {	// master OK->BAD
+				master_dead = 1;
+				err_msg("master OK-->BAD");
+			}
+		} else {	// now master is BAD
+			if (myticket < last_pong[0] + 4) {	// master BAD->OK
+				master_dead = 0;
+				err_msg("master BAD-->OK");
+			}
+		}
+
 		if (master_slave) {
 			send_udp_to_remote(pbuf, len, 1);	// send to slave
 			ping_send[1]++;
 
-			if (master_dead == 0) {	// now master is OK
-				if (myticket > last_pong[0] + 5) {	// master OK->BAD
-					master_dead = 1;
-					err_msg("master OK-->BAD");
-				}
-			} else {	// now master is BAD
-				if (myticket < last_pong[0] + 4) {	// master BAD->OK
-					master_dead = 0;
-					err_msg("master BAD-->OK");
-				}
-			}
 			if (slave_dead == 0) {	// now slave is OK
 				if (myticket > last_pong[1] + 5) {	// slave OK->BAD
 					slave_dead = 1;
@@ -863,7 +865,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		if (write_only)
 			continue;	// write only
 		if (!read_only && fixmss)	// read only, no fix_mss
-			fix_mss(buf + offset, len, master_dead);
+			fix_mss(buf + offset, len, master_slave & master_dead);  // if master_slave=master_dead=1, send to slave
 		if (debug) {
 			printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 			if (offset)
@@ -876,7 +878,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		} else
 			pbuf = buf + offset;
 
-		send_udp_to_remote(pbuf, len, master_dead);
+		send_udp_to_remote(pbuf, len, master_slave & master_dead);  // if master_slave=master_dead=1, send to slave
 	}
 }
 
