@@ -103,6 +103,7 @@ volatile int master_dead = 0;
 volatile int slave_dead = 0;
 volatile int got_signal = 1;
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
+int loopback_check = 0;
 
 void sig_handler(int signo)
 {
@@ -255,8 +256,10 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 	}
 
 	do {
-		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0)
+		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0) {
+			memcpy((void *)&(remote_addr[index]), res->ai_addr, res->ai_addrlen);
 			break;	/* success */
+		}
 	}
 	while ((res = res->ai_next) != NULL);
 
@@ -679,6 +682,88 @@ void fix_mss(u_int8_t * buf, int len, int index)
 		return;		// not IP packet
 }
 
+/*  return 1 if packet will cause loopback, DSTIP or SRCIP ==remote, PROTO==UDP
+*/
+int do_loopback_check(u_int8_t * buf, int len)
+{
+	u_int8_t *packet;
+
+	if (len < 14)		// MAC(12)+Proto(2)+IP(20)
+		return 0;
+	packet = buf + 12;	// skip ethernet dst & src addr
+	len -= 12;
+
+	if ((packet[0] == 0x81) && (packet[1] == 0x00)) {	// skip 802.1Q tag 0x8100
+		packet += 4;
+		len -= 4;
+	}
+	if ((packet[0] == 0x08) && (packet[1] == 0x00)) {	// IPv4 packet 0x0800
+		packet += 2;
+		len -= 2;
+
+		if (len < 20)	// IP header len is 20
+			return 0;
+
+		struct iphdr *ip = (struct iphdr *)packet;
+		if (ip->version != 4)
+			return 0;	// not ipv4
+		if (ip->protocol != IPPROTO_UDP)
+			return 0;	// not udp packet
+
+		struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[0]);
+		if (ip->saddr == r->sin_addr.s_addr) {
+			Debug("master remote ipaddr == src addr, loopback");
+			return 1;
+		} else if (ip->daddr == r->sin_addr.s_addr) {
+			Debug("master remote ipaddr == dst addr, loopback");
+			return 1;
+		}
+		if (master_slave) {
+			struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[1]);
+			if (ip->saddr == r->sin_addr.s_addr) {
+				Debug("slave remote ipaddr == src addr, loopback");
+				return 1;
+			} else if (ip->daddr == r->sin_addr.s_addr) {
+				Debug("slave remote ipaddr == dst addr, loopback");
+				return 1;
+			}
+		}
+	} else if ((packet[0] == 0x86) && (packet[1] == 0xdd)) {	// IPv6 packet, 0x86dd
+		packet += 2;
+		len -= 2;
+
+		if (len < 40)	// IPv6 header len is 40
+			return 0;
+
+		struct ip6_hdr *ip6 = (struct ip6_hdr *)packet;
+		if ((ip6->ip6_vfc & 0xf0) != 0x60)
+			return 0;	// not ipv6
+		if (ip6->ip6_nxt != IPPROTO_UDP)
+			return 0;	// not udp packet
+
+		struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[0];
+		if (memcmp(&ip6->ip6_src, &r->sin6_addr, 16) == 0) {
+			Debug("master remote ip6_addr == src ip6 addr, loopback");
+			return 1;
+		} else if (memcmp(&ip6->ip6_dst, &r->sin6_addr, 16) == 0) {
+			Debug("master remote ip6_addr == dst ip6 addr, loopback");
+			return 1;
+		}
+		if (master_slave) {
+			struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[1];
+			if (memcmp(&ip6->ip6_src, &r->sin6_addr, 16) == 0) {
+				Debug("slave remote ip6_addr == src ip6 addr, loopback");
+				return 1;
+			} else if (memcmp(&ip6->ip6_dst, &r->sin6_addr, 16) == 0) {
+				Debug("slave remote ip6_addr == dst ip6 addr, loopback");
+				return 1;
+			}
+		}
+
+	}
+	return 0;
+}
+
 void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet to remote 
 {
 	if (nat[index]) {
@@ -864,8 +949,11 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			continue;
 		if (write_only)
 			continue;	// write only
+
+		if (loopback_check && do_loopback_check(buf + offset, len))
+			continue;
 		if (!read_only && fixmss)	// read only, no fix_mss
-			fix_mss(buf + offset, len, master_slave & master_dead);  // if master_slave=master_dead=1, send to slave
+			fix_mss(buf + offset, len, master_slave & master_dead);	// if master_slave=master_dead=1, send to slave
 		if (debug) {
 			printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 			if (offset)
@@ -878,7 +966,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		} else
 			pbuf = buf + offset;
 
-		send_udp_to_remote(pbuf, len, master_slave & master_dead);  // if master_slave=master_dead=1, send to slave
+		send_udp_to_remote(pbuf, len, master_slave & master_dead);	// if master_slave=master_dead=1, send to slave
 	}
 }
 
@@ -1088,6 +1176,7 @@ void usage(void)
 	printf("         -w    write only of ethernet interface\n");
 	printf("         -B    benchmark\n");
 	printf("         -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
+	printf("         -noloopcheck  do not check loopback(-r default do check)\n");
 	exit(0);
 }
 
@@ -1144,12 +1233,15 @@ int main(int argc, char *argv[])
 			debug = 1;
 		else if (strcmp(argv[i], "-f") == 0)
 			fixmss = 1;
-		else if (strcmp(argv[i], "-r") == 0)
+		else if (strcmp(argv[i], "-r") == 0) {
 			read_only = 1;
-		else if (strcmp(argv[i], "-w") == 0)
+			loopback_check = 1;
+		} else if (strcmp(argv[i], "-w") == 0)
 			write_only = 1;
 		else if (strcmp(argv[i], "-nopromisc") == 0)
 			nopromisc = 1;
+		else if (strcmp(argv[i], "-noloopcheck") == 0)
+			loopback_check = 0;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
 		else if (strcmp(argv[i], "-p") == 0) {
@@ -1197,20 +1289,21 @@ int main(int argc, char *argv[])
 	if (mode == -1)
 		usage();
 	if (debug) {
-		printf("        debug = 1\n");
-		printf("         mode = %d (0 raw eth bridge, 1 interface, 2 bridge)\n", mode);
-		printf("     password = %s\n", mypassword);
-		printf("enc_algorithm = %s\n",
+		printf("         debug = 1\n");
+		printf("          mode = %d (0 raw eth bridge, 1 interface, 2 bridge)\n", mode);
+		printf("      password = %s\n", mypassword);
+		printf(" enc_algorithm = %s\n",
 		       enc_algorithm == XOR ? "xor" : enc_algorithm == AES_128 ? "aes-128" : enc_algorithm == AES_192 ? "aes-192" : enc_algorithm ==
 		       AES_256 ? "aes-256" : "none");
-		printf("      enc_key = %s\n", enc_key);
-		printf("      key_len = %d\n", enc_key_len);
-		printf(" master_slave = %d\n", master_slave);
-		printf("       fixmss = %d\n", fixmss);
-		printf("    read_only = %d\n", read_only);
-		printf("   write_only = %d\n", write_only);
-		printf("    nopromisc = %d\n", nopromisc);
-		printf("          cmd = ");
+		printf("       enc_key = %s\n", enc_key);
+		printf("       key_len = %d\n", enc_key_len);
+		printf("  master_slave = %d\n", master_slave);
+		printf("        fixmss = %d\n", fixmss);
+		printf("     read_only = %d\n", read_only);
+		printf("loopback_check = %d\n", loopback_check);
+		printf("    write_only = %d\n", write_only);
+		printf("     nopromisc = %d\n", nopromisc);
+		printf("           cmd = ");
 		int n;
 		for (n = i; n < argc; n++)
 			printf("%s ", argv[n]);
