@@ -40,11 +40,16 @@
 #define MAX_PACKET_SIZE		2048
 #define MAXFD   		64
 
+#define STATUS_BAD 	0
+#define STATUS_OK  	1
+#define MASTER 		0
+#define SLAVE 		1
+
 #define MODEE	0		// raw ether bridge mode
 #define MODEI	1		// tap interface mode
 #define MODEB	2		// bridge mode
 
-#define XOR 1
+#define XOR 	1
 
 //#define DEBUGPINGPONG 1
 //#define DEBUGSSL      1
@@ -83,27 +88,32 @@ typedef struct _EtherHeader EtherPacket;
 int daemon_proc;		/* set nonzero by daemon_init() */
 int debug = 0;
 
-int32_t ifindex;
-int fdudp[2], fdraw;
-int transfamily[2];
-int nat[2];
 int mode = -1;			// 0 eth bridge, 1 interface, 2 bridge
+int master_slave = 0;
+int read_only = 0, write_only = 0;
+int fixmss = 0;
+int nopromisc = 0;
+int loopback_check = 0;
+
+int32_t ifindex;
+
 char mypassword[MAXLEN];
 int enc_algorithm;
 unsigned char enc_key[MAXLEN];
 unsigned char enc_iv[EVP_MAX_IV_LENGTH];
 int enc_key_len = 0;
-int master_slave = 0;
-int read_only = 0, write_only = 0;
-int fixmss = 0;
-int nopromisc = 0;
+
+int fdudp[2], fdraw;
+int transfamily[2];
+int nat[2];
+
 volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
-volatile int master_dead = 0;
-volatile int slave_dead = 0;
-volatile int got_signal = 1;
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
-int loopback_check = 0;
+volatile int master_status = STATUS_OK;
+volatile int slave_status = STATUS_OK;
+volatile int current_remote = MASTER;
+volatile int got_signal = 1;
 
 void sig_handler(int signo)
 {
@@ -682,7 +692,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 		return;		// not IP packet
 }
 
-/*  return 1 if packet will cause loopback, DSTIP or SRCIP ==remote, PROTO==UDP
+/*  return 1 if packet will cause loopback, DSTIP or SRCIP == remote address && PROTO == UDP
 */
 int do_loopback_check(u_int8_t * buf, int len)
 {
@@ -710,7 +720,7 @@ int do_loopback_check(u_int8_t * buf, int len)
 		if (ip->protocol != IPPROTO_UDP)
 			return 0;	// not udp packet
 
-		struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[0]);
+		struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[MASTER]);
 		if (ip->saddr == r->sin_addr.s_addr) {
 			Debug("master remote ipaddr == src addr, loopback");
 			return 1;
@@ -719,7 +729,7 @@ int do_loopback_check(u_int8_t * buf, int len)
 			return 1;
 		}
 		if (master_slave) {
-			struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[1]);
+			struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[SLAVE]);
 			if (ip->saddr == r->sin_addr.s_addr) {
 				Debug("slave remote ipaddr == src addr, loopback");
 				return 1;
@@ -741,7 +751,7 @@ int do_loopback_check(u_int8_t * buf, int len)
 		if (ip6->ip6_nxt != IPPROTO_UDP)
 			return 0;	// not udp packet
 
-		struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[0];
+		struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[MASTER];
 		if (memcmp(&ip6->ip6_src, &r->sin6_addr, 16) == 0) {
 			Debug("master remote ip6_addr == src ip6 addr, loopback");
 			return 1;
@@ -750,7 +760,7 @@ int do_loopback_check(u_int8_t * buf, int len)
 			return 1;
 		}
 		if (master_slave) {
-			struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[1];
+			struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[SLAVE];
 			if (memcmp(&ip6->ip6_src, &r->sin6_addr, 16) == 0) {
 				Debug("slave remote ip6_addr == src ip6 addr, loopback");
 				return 1;
@@ -759,7 +769,6 @@ int do_loopback_check(u_int8_t * buf, int len)
 				return 1;
 			}
 		}
-
 	}
 	return 0;
 }
@@ -792,22 +801,23 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	static u_int32_t lasttm;
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
-			err_msg("============= myticket=%lu, master_slave=%d, master_dead=%d, slave_dead=%d", (unsigned long)myticket,
-				master_slave, master_dead, slave_dead);
+			err_msg("============= myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d", (unsigned long)myticket,
+				master_slave, master_status, slave_status);
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
-				(unsigned long)ping_send[0], (unsigned long)pong_recv[0], (unsigned long)ping_recv[0], (unsigned long)pong_send[0]);
-			err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
-				(unsigned long)ping_send[1], (unsigned long)pong_recv[1], (unsigned long)ping_recv[1], (unsigned long)pong_send[1]);
+				(unsigned long)ping_send[MASTER], (unsigned long)pong_recv[MASTER], (unsigned long)ping_recv[MASTER],
+				(unsigned long)pong_send[MASTER]);
+			err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d", (unsigned long)ping_send[SLAVE],
+				(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE]);
 			if (myticket >= lasttm + 3600) {
-				ping_send[0] = ping_send[1] = ping_recv[0] = ping_recv[1] = 0;
-				pong_send[0] = pong_send[1] = pong_recv[0] = pong_recv[1] = 0;
+				ping_send[MASTER] = ping_send[SLAVE] = ping_recv[MASTER] = ping_recv[SLAVE] = 0;
+				pong_send[MASTER] = pong_send[SLAVE] = pong_recv[MASTER] = pong_recv[SLAVE] = 0;
 				lasttm = myticket;
 			}
 			got_signal = 0;
 		}
 		myticket++;
 		if (mypassword[0]) {
-			if (nat[0] == 0) {
+			if (nat[MASTER] == 0) {
 				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
 				Debug("send password: %s", buf);
 				len++;
@@ -816,10 +826,10 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 					pbuf = nbuf;
 				} else
 					pbuf = buf;
-				send_udp_to_remote(pbuf, len, 0);	// send to master
+				send_udp_to_remote(pbuf, len, MASTER);	// send to master
 			}
-			if (master_slave && (nat[1] == 0))
-				send_udp_to_remote(pbuf, len, 1);	// send to slave
+			if (master_slave && (nat[SLAVE] == 0))
+				send_udp_to_remote(pbuf, len, SLAVE);	// send to slave
 		}
 		memcpy(buf, "PING:PING:", 10);
 		len = 10;
@@ -828,33 +838,36 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			pbuf = nbuf;
 		} else
 			pbuf = buf;
-		send_udp_to_remote(pbuf, len, 0);	// send to master
-		ping_send[0]++;
+		send_udp_to_remote(pbuf, len, MASTER);	// send to master
+		ping_send[MASTER]++;
 
-		if (master_dead == 0) {	// now master is OK
-			if (myticket > last_pong[0] + 5) {	// master OK->BAD
-				master_dead = 1;
-				err_msg("master OK-->BAD");
+		if (master_status == STATUS_OK) {	// now master is OK
+			if (myticket > last_pong[MASTER] + 5) {	// master OK->BAD
+				master_status = STATUS_BAD;
+				if (master_slave)
+					current_remote = SLAVE;	// switch to SLAVE
+				err_msg("master OK-->BAD, current_remote is %d", current_remote);
 			}
 		} else {	// now master is BAD
-			if (myticket < last_pong[0] + 4) {	// master BAD->OK
-				master_dead = 0;
-				err_msg("master BAD-->OK");
+			if (myticket < last_pong[MASTER] + 4) {	// master BAD->OK
+				master_status = STATUS_OK;
+				current_remote = MASTER;	// switch to MASTER
+				err_msg("master BAD-->OK, current_remote is %d", current_remote);
 			}
 		}
 
 		if (master_slave) {
-			send_udp_to_remote(pbuf, len, 1);	// send to slave
-			ping_send[1]++;
+			send_udp_to_remote(pbuf, len, SLAVE);	// send to slave
+			ping_send[SLAVE]++;
 
-			if (slave_dead == 0) {	// now slave is OK
-				if (myticket > last_pong[1] + 5) {	// slave OK->BAD
-					slave_dead = 1;
+			if (slave_status == STATUS_OK) {	// now slave is OK
+				if (myticket > last_pong[SLAVE] + 5) {	// slave OK->BAD
+					slave_status = STATUS_BAD;
 					err_msg("slave OK-->BAD");
 				}
 			} else {	// now slave is BAD
-				if (myticket < last_pong[1] + 4) {	// slave BAD->OK
-					slave_dead = 0;
+				if (myticket < last_pong[SLAVE] + 4) {	// slave BAD->OK
+					slave_status = STATUS_OK;
 					err_msg("slave BAD-->OK");
 				}
 			}
@@ -953,7 +966,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		if (loopback_check && do_loopback_check(buf + offset, len))
 			continue;
 		if (!read_only && fixmss)	// read only, no fix_mss
-			fix_mss(buf + offset, len, master_slave & master_dead);	// if master_slave=master_dead=1, send to slave
+			fix_mss(buf + offset, len, current_remote);
 		if (debug) {
 			printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 			if (offset)
@@ -966,7 +979,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		} else
 			pbuf = buf + offset;
 
-		send_udp_to_remote(pbuf, len, master_slave & master_dead);	// if master_slave=master_dead=1, send to slave
+		send_udp_to_remote(pbuf, len, current_remote);
 	}
 }
 
@@ -1103,12 +1116,12 @@ void process_udp_to_raw(int index)
 
 void process_udp_to_raw_master(void)
 {
-	process_udp_to_raw(0);
+	process_udp_to_raw(MASTER);
 }
 
 void process_udp_to_raw_slave(void)
 {
-	process_udp_to_raw(1);
+	process_udp_to_raw(SLAVE);
 }
 
 int open_tun(const char *dev, char **actual)
@@ -1328,16 +1341,16 @@ int main(int argc, char *argv[])
 	signal(SIGHUP, sig_handler);
 
 	if (mode == MODEE) {	// eth bridge mode
-		fdudp[0] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], 0);
+		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
 		if (master_slave)
-			fdudp[1] = udp_xconnect(argv[i + 5], argv[i + 6], argv[i + 7], argv[i + 8], 1);
+			fdudp[SLAVE] = udp_xconnect(argv[i + 5], argv[i + 6], argv[i + 7], argv[i + 8], SLAVE);
 		fdraw = open_socket(argv[i + 4], &ifindex);
 	} else if (mode == MODEI) {	// interface mode
 		char *actualname = NULL;
 		char buf[MAXLEN];
-		fdudp[0] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], 0);
+		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
 		if (master_slave)
-			fdudp[1] = udp_xconnect(argv[i + 6], argv[i + 7], argv[i + 8], argv[i + 9], 1);
+			fdudp[SLAVE] = udp_xconnect(argv[i + 6], argv[i + 7], argv[i + 8], argv[i + 9], SLAVE);
 		fdraw = open_tun("tap", &actualname);
 		snprintf(buf, MAXLEN, "/sbin/ip addr add %s/%s dev %s; /sbin/ip link set %s up", argv[i + 4], argv[i + 5], actualname, actualname);
 		if (debug)
@@ -1348,9 +1361,9 @@ int main(int argc, char *argv[])
 	} else if (mode == MODEB) {	// bridge mode
 		char *actualname = NULL;
 		char buf[MAXLEN];
-		fdudp[0] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], 0);
+		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
 		if (master_slave)
-			fdudp[1] = udp_xconnect(argv[i + 5], argv[i + 6], argv[i + 7], argv[i + 8], 1);
+			fdudp[SLAVE] = udp_xconnect(argv[i + 5], argv[i + 6], argv[i + 7], argv[i + 8], SLAVE);
 		fdraw = open_tun("tap", &actualname);
 		snprintf(buf, MAXLEN, "/sbin/ip link set %s up; brctl addif %s %s", actualname, argv[i + 4], actualname);
 		if (debug)
