@@ -104,9 +104,10 @@ unsigned char enc_iv[EVP_MAX_IV_LENGTH];
 int enc_key_len = 0;
 
 int fdudp[2], fdraw;
-int transfamily[2];
 int nat[2];
 
+volatile struct sockaddr_storage local_addr[2];
+volatile struct sockaddr_storage cmd_remote_addr[2];
 volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
@@ -221,10 +222,10 @@ int udp_server(const char *host, const char *serv, socklen_t * addrlenp, int ind
 	ressave = res;
 
 	do {
-		transfamily[index] = res->ai_family;
 		sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
 		if (sockfd < 0)
 			continue;	/* error, try next one */
+		memcpy((void *)&(local_addr[index]), res->ai_addr, res->ai_addrlen);
 		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, 1);
 		if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
 			break;	/* success */
@@ -261,12 +262,13 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 	if (((struct sockaddr_in *)res->ai_addr)->sin_port == 0) {
 		Debug("port==0, nat = 1");
 		nat[index] = 1;
-		memcpy((void *)&(remote_addr[index]), res->ai_addr, res->ai_addrlen);
+		memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
 		return sockfd;
 	}
 
 	do {
 		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0) {
+			memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
 			memcpy((void *)&(remote_addr[index]), res->ai_addr, res->ai_addrlen);
 			break;	/* success */
 		}
@@ -615,9 +617,9 @@ void fix_mss(u_int8_t * buf, int len, int index)
 			if (opt[i] == 2 && tcph->doff * 4 - i >= 4 &&	// TCP_MSS
 			    opt[i + 1] == 4) {
 				u_int16_t newmss = 0, oldmss;
-				if (transfamily[index] == PF_INET)
+				if (local_addr[index].ss_family == PF_INET)
 					newmss = 1418;
-				else if (transfamily[index] == PF_INET6)
+				else if (local_addr[index].ss_family == PF_INET6)
 					newmss = 1398;
 				if (VLANdot1Q)
 					newmss -= 4;
@@ -661,9 +663,9 @@ void fix_mss(u_int8_t * buf, int len, int index)
 			if (opt[i] == 2 && tcph->doff * 4 - i >= 4 &&	// TCP_MSS
 			    opt[i + 1] == 4) {
 				u_int16_t newmss = 0, oldmss;
-				if (transfamily[index] == PF_INET)
+				if (local_addr[index].ss_family == PF_INET)
 					newmss = 1398;
-				else if (transfamily[index] == PF_INET6)
+				else if (local_addr[index].ss_family == PF_INET6)
 					newmss = 1378;
 				if (VLANdot1Q)
 					newmss -= 4;
@@ -792,6 +794,44 @@ void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet t
 		write(fdudp[index], buf, len);
 }
 
+void print_addrinfo(int index)
+{
+	char localip[200];
+	char cmd_remoteip[200];
+	char remoteip[200];
+	if (local_addr[index].ss_family == AF_INET) {
+		struct sockaddr_in *r = (struct sockaddr_in *)(&local_addr[index]);
+		int lp, c_rp, rp;
+		lp = ntohs(r->sin_port);
+		inet_ntop(AF_INET, &r->sin_addr, localip, 200);
+		r = (struct sockaddr_in *)(&cmd_remote_addr[index]);
+		c_rp = ntohs(r->sin_port);
+		inet_ntop(AF_INET, &r->sin_addr, cmd_remoteip, 200);
+		r = (struct sockaddr_in *)(&remote_addr[index]);
+		rp = ntohs(r->sin_port);
+		inet_ntop(AF_INET, &r->sin_addr, remoteip, 200);
+		if (nat[index])
+			err_msg("%s: %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+		else
+			err_msg("%s: %s:%d --> %s:%d", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp);
+	} else if (local_addr[index].ss_family == AF_INET6) {
+		struct sockaddr_in6 *r = (struct sockaddr_in6 *)(&local_addr[index]);
+		int lp, c_rp, rp;
+		lp = ntohs(r->sin6_port);
+		inet_ntop(AF_INET6, &r->sin6_addr, localip, 200);
+		r = (struct sockaddr_in6 *)(&cmd_remote_addr[index]);
+		c_rp = ntohs(r->sin6_port);
+		inet_ntop(AF_INET6, &r->sin6_addr, cmd_remoteip, 200);
+		r = (struct sockaddr_in6 *)(&remote_addr[index]);
+		rp = ntohs(r->sin6_port);
+		inet_ntop(AF_INET6, &r->sin6_addr, remoteip, 200);
+		if (nat[index])
+			err_msg("%s: [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+		else
+			err_msg("%s: [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp);
+	}
+}
+
 void send_keepalive_to_udp(void)	// send keepalive to remote  
 {
 	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
@@ -801,13 +841,18 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	static u_int32_t lasttm;
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
+
 			err_msg("============= myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d", (unsigned long)myticket,
 				master_slave, master_status, slave_status);
+			print_addrinfo(MASTER);
+			if (master_slave)
+				print_addrinfo(SLAVE);
 			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
 				(unsigned long)ping_send[MASTER], (unsigned long)pong_recv[MASTER], (unsigned long)ping_recv[MASTER],
 				(unsigned long)pong_send[MASTER]);
-			err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d", (unsigned long)ping_send[SLAVE],
-				(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE]);
+			if (master_slave)
+				err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d", (unsigned long)ping_send[SLAVE],
+					(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE]);
 			if (myticket >= lasttm + 3600) {
 				ping_send[MASTER] = ping_send[SLAVE] = ping_recv[MASTER] = ping_recv[SLAVE] = 0;
 				pong_send[MASTER] = pong_send[SLAVE] = pong_recv[MASTER] = pong_recv[SLAVE] = 0;
@@ -988,13 +1033,23 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 	char rip[200];
 	if (memcmp((void *)rmt, (void *)(&remote_addr[index]), sock_len) == 0)
 		return;
-	memcpy((void *)&remote_addr[index], rmt, sock_len);
 	if (rmt->ss_family == AF_INET) {
 		struct sockaddr_in *r = (struct sockaddr_in *)rmt;
-		err_msg("nat mode, change remote to %s:%d", inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
+		struct sockaddr_in *cmdr = (struct sockaddr_in *)&cmd_remote_addr[index];
+		if ((cmdr->sin_addr.s_addr == 0) || (cmdr->sin_addr.s_addr == r->sin_addr.s_addr)) {
+			memcpy((void *)&remote_addr[index], rmt, sock_len);
+			err_msg("nat mode, change remote to %s:%d", inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
+		} else
+			err_msg("nat mode, do not change remote to %s:%d", inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
 	} else if (rmt->ss_family == AF_INET6) {
 		struct sockaddr_in6 *r = (struct sockaddr_in6 *)rmt;
-		err_msg("nat mode, change remote to [%s]:%d", inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
+		struct sockaddr_in6 *cmdr = (struct sockaddr_in6 *)&cmd_remote_addr[index];
+		struct in6_addr ia6 = IN6ADDR_ANY_INIT;
+		if ((memcmp(&ia6, &cmdr->sin6_addr, 16) == 0) || (memcmp(&r->sin6_addr, &cmdr->sin6_addr, 16) == 0)) {
+			memcpy((void *)&remote_addr[index], rmt, sock_len);
+			err_msg("nat mode, change remote to [%s]:%d", inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
+		}
+		err_msg("nat mode, do not change remote to [%s]:%d", inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 	}
 }
 
