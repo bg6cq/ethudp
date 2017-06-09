@@ -94,6 +94,7 @@ int read_only = 0, write_only = 0;
 int fixmss = 0;
 int nopromisc = 0;
 int loopback_check = 0;
+int packet_len = 1500;
 
 int32_t ifindex;
 
@@ -1243,13 +1244,13 @@ void usage(void)
 	printf("         -r    read only of ethernet interface\n");
 	printf("         -w    write only of ethernet interface\n");
 	printf("         -B    benchmark\n");
+	printf("         -l    packet_len\n");
 	printf("         -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
 	printf("         -noloopcheck  do not check loopback(-r default do check)\n");
 	exit(0);
 }
 
 #define BENCHCNT 300000
-#define PKT_LEN 1500
 
 void do_benchmark(void)
 {
@@ -1259,7 +1260,7 @@ void do_benchmark(void)
 	int len;
 	struct timeval start_tm, end_tm;
 	gettimeofday(&start_tm, NULL);
-	fprintf(stderr, "benchmarking for %d packets, %d size...\n", BENCHCNT, PKT_LEN);
+	fprintf(stderr, "benchmarking for %d packets, %d size...\n", BENCHCNT, packet_len);
 	fprintf(stderr, "enc_algorithm = %s\n",
 		enc_algorithm == XOR ? "xor" : enc_algorithm == AES_128 ? "aes-128" : enc_algorithm == AES_192 ? "aes-192" : enc_algorithm ==
 		AES_256 ? "aes-256" : "none");
@@ -1267,7 +1268,7 @@ void do_benchmark(void)
 	fprintf(stderr, "      key_len = %d\n", enc_key_len);
 	pkt_cnt = BENCHCNT;
 	while (1) {
-		len = PKT_LEN;
+		len = packet_len;
 		len = do_encrypt(buf, len, nbuf);
 		pkt_cnt--;
 		if (pkt_cnt == 0)
@@ -1277,8 +1278,8 @@ void do_benchmark(void)
 	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000L + end_tm.tv_usec) - start_tm.tv_usec;
 	tspan = tspan / 1000000L;
 	fprintf(stderr, "%0.3f seconds\n", tspan);
-	fprintf(stderr, "PPS: %.0f PKT/S, %.0f Byte/S\n", (float)BENCHCNT / tspan, 1.0 * (PKT_LEN) * (float)BENCHCNT / tspan);
-	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (PKT_LEN) * (float)BENCHCNT / tspan);
+	fprintf(stderr, "PPS: %.0f PKT/S, %.0f Byte/S\n", (float)BENCHCNT / tspan, 1.0 * (packet_len) * (float)BENCHCNT / tspan);
+	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (packet_len) * (float)BENCHCNT / tspan);
 	exit(0);
 }
 
@@ -1312,7 +1313,12 @@ int main(int argc, char *argv[])
 			loopback_check = 0;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
-		else if (strcmp(argv[i], "-p") == 0) {
+		else if (strcmp(argv[i], "-l") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			packet_len = atoi(argv[i]);
+		} else if (strcmp(argv[i], "-p") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
