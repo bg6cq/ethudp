@@ -112,6 +112,8 @@ volatile struct sockaddr_storage cmd_remote_addr[2];
 volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
+volatile u_int32_t raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
+volatile u_int32_t udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
 volatile int master_status = STATUS_OK;
 volatile int slave_status = STATUS_OK;
 volatile int current_remote = MASTER;
@@ -783,16 +785,25 @@ void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet t
 		if (remote_addr[index].ss_family == AF_INET) {
 			struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[index]);
 			Debug("nat mode: send len %d to %s:%d", len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
-			if (r->sin_port)
+			if (r->sin_port) {
 				sendto(fdudp[index], buf, len, 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
+				udp_send_pkt[index]++;
+				udp_send_byte[index] += len;
+			}
 		} else if (remote_addr[index].ss_family == AF_INET6) {
 			struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[index];
 			Debug("nat mode: send len %d to [%s]:%d", len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
-			if (r->sin6_port)
+			if (r->sin6_port) {
 				sendto(fdudp[index], buf, len, 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
+				udp_send_pkt[index]++;
+				udp_send_byte[index] += len;
+			}
 		}
-	} else
+	} else {
 		write(fdudp[index], buf, len);
+		udp_send_pkt[index]++;
+		udp_send_byte[index] += len;
+	}
 }
 
 void print_addrinfo(int index)
@@ -812,9 +823,9 @@ void print_addrinfo(int index)
 		rp = ntohs(r->sin_port);
 		inet_ntop(AF_INET, &r->sin_addr, remoteip, 200);
 		if (nat[index])
-			err_msg("%s: %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+			err_msg("%s: %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
 		else
-			err_msg("%s: %s:%d --> %s:%d", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp);
+			err_msg("%s: %s:%d --> %s:%d", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp);
 	} else if (local_addr[index].ss_family == AF_INET6) {
 		struct sockaddr_in6 *r = (struct sockaddr_in6 *)(&local_addr[index]);
 		int lp, c_rp, rp;
@@ -827,9 +838,9 @@ void print_addrinfo(int index)
 		rp = ntohs(r->sin6_port);
 		inet_ntop(AF_INET6, &r->sin6_addr, remoteip, 200);
 		if (nat[index])
-			err_msg("%s: [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+			err_msg("%s: [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
 		else
-			err_msg("%s: [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : "SLAVE", localip, lp, remoteip, rp);
+			err_msg("%s: [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp);
 	}
 }
 
@@ -848,17 +859,23 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			print_addrinfo(MASTER);
 			if (master_slave)
 				print_addrinfo(SLAVE);
-			err_msg("master ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d",
+			err_msg("master ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu",
 				(unsigned long)ping_send[MASTER], (unsigned long)pong_recv[MASTER], (unsigned long)ping_recv[MASTER],
 				(unsigned long)pong_send[MASTER]);
 			if (master_slave)
-				err_msg(" slave ping_send/pong_recv: %d/%d, ping_recv/pong_send: %d/%d", (unsigned long)ping_send[SLAVE],
+				err_msg(" slave ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu", (unsigned long)ping_send[SLAVE],
 					(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE]);
 			if (myticket >= lasttm + 3600) {
 				ping_send[MASTER] = ping_send[SLAVE] = ping_recv[MASTER] = ping_recv[SLAVE] = 0;
 				pong_send[MASTER] = pong_send[SLAVE] = pong_recv[MASTER] = pong_recv[SLAVE] = 0;
 				lasttm = myticket;
 			}
+			err_msg("       raw interface recv:%lu/%lu send:%lu/%lu", raw_recv_pkt, raw_recv_byte, raw_send_pkt, raw_send_byte);
+			err_msg("master udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[MASTER], udp_recv_byte[MASTER], udp_send_pkt[MASTER],
+				udp_send_byte[MASTER]);
+			if (master_slave)
+				err_msg(" slave udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[SLAVE], udp_recv_byte[SLAVE], udp_send_pkt[SLAVE],
+					udp_send_byte[SLAVE]);
 			got_signal = 0;
 		}
 		myticket++;
@@ -1009,6 +1026,8 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		if (write_only)
 			continue;	// write only
 
+		raw_recv_pkt++;
+		raw_recv_byte += len;
 		if (loopback_check && do_loopback_check(buf + offset, len))
 			continue;
 		if (!read_only && fixmss)	// read only, no fix_mss
@@ -1089,6 +1108,8 @@ void process_udp_to_raw(int index)
 			if (len <= 0)
 				continue;
 
+			udp_recv_pkt[index]++;
+			udp_recv_byte[index] += len;
 			nbuf[len] = 0;
 			if (mypassword[0] == 0) {	// no password set, accept new ip and port
 				Debug("no password, accept new remote ip and port");
@@ -1123,6 +1144,8 @@ void process_udp_to_raw(int index)
 				pbuf = buf;
 			if (len <= 0)
 				continue;
+			udp_recv_pkt[index]++;
+			udp_recv_byte[index] += len;
 		}
 
 		if (memcmp(pbuf, "PING:PING:", 10) == 0) {
@@ -1158,6 +1181,8 @@ void process_udp_to_raw(int index)
 
 		if (debug)
 			printPacket((EtherPacket *) pbuf, len, "from remote udpsocket:");
+		raw_send_pkt++;
+		raw_send_byte += len;
 		if (mode == MODEE) {
 			struct sockaddr_ll sll;
 			memset(&sll, 0, sizeof(sll));
