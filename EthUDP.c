@@ -909,13 +909,13 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				master_status = STATUS_BAD;
 				if (master_slave)
 					current_remote = SLAVE;	// switch to SLAVE
-				err_msg("master OK-->BAD, current_remote is %s", current_remote, current_remote == 0 ? "MASTER" : "SLAVE");
+				err_msg("master OK-->BAD, current_remote is %s", current_remote == 0 ? "MASTER" : "SLAVE");
 			}
 		} else {	// now master is BAD
 			if (myticket < last_pong[MASTER] + 4) {	// master BAD->OK
 				master_status = STATUS_OK;
 				current_remote = MASTER;	// switch to MASTER
-				err_msg("master OK-->BAD, current_remote is %d", current_remote);
+				err_msg("master BAD-->OK, current_remote is %s", current_remote == 0 ? "MASTER" : "SLAVE");
 			}
 		}
 
