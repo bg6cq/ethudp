@@ -116,8 +116,8 @@ int nat[2];
 
 int lz4 = 0;
 #ifdef ENABLE_LZ4
-u_int32_t compress_total = 0;
-u_int32_t compress_save = 0;
+long long compress_total = 0;
+long long compress_save = 0;
 #define LZ4_SPACE 128
 #endif
 
@@ -943,7 +943,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				err_msg(" slave udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[SLAVE], udp_recv_byte[SLAVE], udp_send_pkt[SLAVE],
 					udp_send_byte[SLAVE]);
 #ifdef ENABLE_LZ4
-			err_msg("lz4 process %lu bytes, save %lu bytes", compress_total, compress_save);
+			err_msg("lz4 process %lld bytes, save %lld bytes", compress_total, compress_save);
 #endif
 			got_signal = 0;
 		}
