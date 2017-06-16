@@ -8,6 +8,9 @@
 // enable OPENSSL encrypt/decrypt support
 #define ENABLE_OPENSSL 1
 
+// enable LZ4 compress
+#define ENABLE_LZ4 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +38,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+
+#ifdef ENABLE_LZ4
+#include <lz4.h>
+#endif
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE		2048
@@ -106,6 +113,12 @@ int enc_key_len = 0;
 
 int fdudp[2], fdraw;
 int nat[2];
+
+int lz4 = 0;
+#ifdef ENABLE_LZ4
+u_int32_t compress_save = 0;
+#define LZ4_SPACE 128
+#endif
 
 volatile struct sockaddr_storage local_addr[2];
 volatile struct sockaddr_storage cmd_remote_addr[2];
@@ -441,8 +454,28 @@ int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 
 int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
+#ifdef ENABLE_LZ4
+	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
+	if (lz4 > 0) {
+		int nlen;
+		nlen = LZ4_compress_fast((char *)buf, (char *)lzbuf, len, len + LZ4_SPACE, lz4);
+		if (nlen <= 0) {
+			err_msg("lz4 compress error");
+			return 0;
+		}
+		Debug("compress %d-->%d save %d byte", len, nlen, len - nlen);
+		compress_save += len - nlen;
+		len = nlen;
+		buf = lzbuf;
+	}
+	if (enc_key_len <= 0) {
+		memcpy(nbuf, buf, len);
+		return len;
+	}
+#else
 	if (enc_key_len <= 0)
-		return 0;	// you should not call me!
+		return 0;
+#endif
 	if (enc_algorithm == XOR)
 		return xor_encrypt(buf, len, nbuf);
 #ifdef ENABLE_OPENSSL
@@ -456,8 +489,27 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 
 int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
+#ifdef ENABLE_LZ4
+	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
+	if (lz4 > 0) {
+		int nlen;
+		nlen = LZ4_decompress_safe((char *)buf, (char *)lzbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
+		if (nlen < 0) {
+			err_msg("lz4 decompress error");
+			return 0;
+		}
+		buf = lzbuf;
+		Debug("decompress %d-->%d ", len, nlen);
+		len = nlen;
+	}
+	if (enc_key_len <= 0) {
+		memcpy(nbuf, buf, len);
+		return len;
+	}
+#else
 	if (enc_key_len <= 0)
 		return 0;	// you should not call me!
+#endif
 	if (enc_algorithm == XOR)
 		return xor_encrypt(buf, len, nbuf);
 #ifdef ENABLE_OPENSSL
@@ -876,6 +928,9 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			if (master_slave)
 				err_msg(" slave udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[SLAVE], udp_recv_byte[SLAVE], udp_send_pkt[SLAVE],
 					udp_send_byte[SLAVE]);
+#ifdef ENABLE_LZ4
+			err_msg("lz4 save %lu bytes", compress_save);
+#endif
 			got_signal = 0;
 		}
 		myticket++;
@@ -884,7 +939,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
 				Debug("send password: %s", buf);
 				len++;
-				if (enc_key_len > 0) {
+				if ((enc_key_len > 0) || (lz4 > 0)) {
 					len = do_encrypt((u_int8_t *) buf, len, nbuf);
 					pbuf = nbuf;
 				} else
@@ -896,7 +951,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 		}
 		memcpy(buf, "PING:PING:", 10);
 		len = 10;
-		if (enc_key_len > 0) {
+		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf, len, nbuf);
 			pbuf = nbuf;
 		} else
@@ -941,8 +996,12 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 
 void process_raw_to_udp(void)	// used by mode==0 & mode==1
 {
-	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN];
+#ifdef ENABLE_LZ4
+	u_int8_t nbuf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
+#else
 	u_int8_t nbuf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH];
+#endif
 	u_int8_t *pbuf;
 	int len;
 	int offset = 0;
@@ -1043,7 +1102,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				printf("offset=%d\n", offset);
 		}
 
-		if (enc_key_len > 0) {
+		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf + offset, len, nbuf);
 			pbuf = nbuf;
 		} else
@@ -1080,7 +1139,11 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 
 void process_udp_to_raw(int index)
 {
+#ifdef ENABLE_LZ4
+	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
+#else
 	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+#endif
 	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
 	u_int8_t *pbuf;
 	int len;
@@ -1104,7 +1167,7 @@ void process_udp_to_raw(int index)
 			}
 			if (len <= 0)
 				continue;
-			if (enc_key_len > 0) {
+			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
 			} else
@@ -1142,7 +1205,7 @@ void process_udp_to_raw(int index)
 			len = recv(fdudp[index], buf, MAX_PACKET_SIZE, 0);
 			if (len <= 0)
 				continue;
-			if (enc_key_len > 0) {
+			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
 			} else
@@ -1160,7 +1223,7 @@ void process_udp_to_raw(int index)
 			ping_recv[index]++;
 			memcpy(buf, "PONG:PONG:", 10);
 			len = 10;
-			if (enc_key_len > 0) {
+			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_encrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
 			} else
@@ -1269,6 +1332,7 @@ void usage(void)
 	printf("         -p password\n");
 	printf("         -enc [ xor | aes-128 | aes-192 | aes-256 ]\n");
 	printf("         -k key_string\n");
+	printf("         -lz4 [ 1 - 9 ] lz4 acceleration");
 	printf("         -d    enable debug\n");
 	printf("         -f    enable fix mss\n");
 	printf("         -r    read only of ethernet interface\n");
@@ -1343,7 +1407,12 @@ int main(int argc, char *argv[])
 			loopback_check = 0;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
-		else if (strcmp(argv[i], "-l") == 0) {
+		else if (strcmp(argv[i], "-lz4") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			lz4 = atoi(argv[i]);
+		} else if (strcmp(argv[i], "-l") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
@@ -1407,6 +1476,9 @@ int main(int argc, char *argv[])
 		printf("loopback_check = %d\n", loopback_check);
 		printf("    write_only = %d\n", write_only);
 		printf("     nopromisc = %d\n", nopromisc);
+#ifdef ENABLE_LZ4
+		printf("           lz4 = %d\n", lz4);
+#endif
 		printf("           cmd = ");
 		int n;
 		for (n = i; n < argc; n++)
