@@ -477,6 +477,7 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 			compress_total += len;
 			compress_save--;
 			len++;
+			Debug("not compressed %d", len);
 		}
 	}
 	if (enc_key_len <= 0) {
@@ -517,13 +518,12 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 #endif
 	}
 	if ((lz4 > 0) && (len > 0)) {
+		len--;
 		if (buf[len] == 0xaa) {	// not compressed data
-			len--;
 			Debug("decompress not compressed data %d", len);
 			memcpy(nbuf, buf, len);
 		} else if (buf[len] == 0xff) {	// compressed data
 			int nlen;
-			len--;
 			nlen = LZ4_decompress_safe((char *)buf, (char *)nbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
 			if (nlen < 0) {
 				err_msg("lz4 decompress error");
@@ -532,7 +532,7 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 			Debug("decompress %d-->%d", len, nlen);
 			len = nlen;
 		} else {
-			err_msg("last byte error");
+			err_msg("last byte error 0X%02X", buf[len]);
 			return 0;
 		}
 	} else
