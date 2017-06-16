@@ -491,25 +491,36 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
 #ifdef ENABLE_LZ4
 	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
+	if (enc_key_len > 0) {
+		if (enc_algorithm == XOR) {
+			len = xor_encrypt(buf, len, lzbuf);
+			buf = lzbuf;
+		}
+#ifdef ENABLE_OPENSSL
+		else if ((enc_algorithm == AES_128)
+			 || (enc_algorithm == AES_192)
+			 || (enc_algorithm == AES_256)) {
+			len = openssl_decrypt(buf, len, lzbuf);
+			buf = lzbuf;
+		}
+#endif
+	}
 	if (lz4 > 0) {
 		int nlen;
-		nlen = LZ4_decompress_safe((char *)buf, (char *)lzbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
+		nlen = LZ4_decompress_safe((char *)buf, (char *)nbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
 		if (nlen < 0) {
 			err_msg("lz4 decompress error");
 			return 0;
 		}
-		buf = lzbuf;
 		Debug("decompress %d-->%d ", len, nlen);
 		len = nlen;
-	}
-	if (enc_key_len <= 0) {
-		memcpy(nbuf, buf, len);
-		return len;
-	}
+	} else
+		memcpy(nbuf, lzbuf, len);
+	return len;
 #else
 	if (enc_key_len <= 0)
 		return 0;	// you should not call me!
-#endif
+
 	if (enc_algorithm == XOR)
 		return xor_encrypt(buf, len, nbuf);
 #ifdef ENABLE_OPENSSL
@@ -517,8 +528,9 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 	    || (enc_algorithm == AES_192)
 	    || (enc_algorithm == AES_256))
 		return openssl_decrypt(buf, len, nbuf);
-#endif
 	return 0;
+#endif
+#endif
 }
 
 char *stamp(void)
@@ -1351,6 +1363,7 @@ void do_benchmark(void)
 	u_int8_t buf[MAX_PACKET_SIZE];
 	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
 	unsigned long int pkt_cnt;
+	unsigned long int pkt_len = 0, pkt_len_send = 0;
 	int len;
 	struct timeval start_tm, end_tm;
 	gettimeofday(&start_tm, NULL);
@@ -1360,10 +1373,17 @@ void do_benchmark(void)
 		AES_256 ? "aes-256" : "none");
 	fprintf(stderr, "      enc_key = %s\n", enc_key);
 	fprintf(stderr, "      key_len = %d\n", enc_key_len);
+#ifdef ENABLE_LZ4
+	fprintf(stderr, "          lz4 = %d\n", lz4);
+#endif
 	pkt_cnt = BENCHCNT;
+	memset(buf, 'a', packet_len);
+
 	while (1) {
 		len = packet_len;
+		pkt_len += len;
 		len = do_encrypt(buf, len, nbuf);
+		pkt_len_send += len;
 		pkt_cnt--;
 		if (pkt_cnt == 0)
 			break;
@@ -1372,8 +1392,9 @@ void do_benchmark(void)
 	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000L + end_tm.tv_usec) - start_tm.tv_usec;
 	tspan = tspan / 1000000L;
 	fprintf(stderr, "%0.3f seconds\n", tspan);
-	fprintf(stderr, "PPS: %.0f PKT/S, %.0f Byte/S\n", (float)BENCHCNT / tspan, 1.0 * (packet_len) * (float)BENCHCNT / tspan);
-	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (packet_len) * (float)BENCHCNT / tspan);
+	fprintf(stderr, "PPS: %.0f PKT/S, %lu(%lu) Byte, %.0f(%.0f) Byte/S\n", (float)BENCHCNT / tspan, pkt_len, pkt_len_send, 1.0 * pkt_len / tspan,
+		1.0 * pkt_len_send / tspan);
+	fprintf(stderr, "UDP BPS: %.0f(%.0f) BPS\n", 8.0 * pkt_len / tspan, 8.0 * pkt_len_send / tspan);
 	exit(0);
 }
 
