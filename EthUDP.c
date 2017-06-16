@@ -465,10 +465,19 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 			return 0;
 		}
 		Debug("compress %d-->%d save %d byte", len, nlen, len - nlen);
-		compress_total += len;
-		compress_save += len - nlen;
-		len = nlen;
-		buf = lzbuf;
+		if (nlen < len) {	// compressed 
+			lzbuf[nlen] = 0xff;	// 0xff means compressed data
+			nlen++;
+			compress_total += len;
+			compress_save += len - nlen;
+			len = nlen;
+			buf = lzbuf;
+		} else {
+			buf[len] = 0xaa;	// 0xaa means not compressed data
+			compress_total += len;
+			compress_save--;
+			len++;
+		}
 	}
 	if (enc_key_len <= 0) {
 		memcpy(nbuf, buf, len);
@@ -507,17 +516,27 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 		}
 #endif
 	}
-	if (lz4 > 0) {
-		int nlen;
-		nlen = LZ4_decompress_safe((char *)buf, (char *)nbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
-		if (nlen < 0) {
-			err_msg("lz4 decompress error");
+	if ((lz4 > 0) && (len > 0)) {
+		if (buf[len] == 0xaa) {	// not compressed data
+			len--;
+			Debug("decompress not compressed data %d", len);
+			memcpy(nbuf, buf, len);
+		} else if (buf[len] == 0xff) {	// compressed data
+			int nlen;
+			len--;
+			nlen = LZ4_decompress_safe((char *)buf, (char *)nbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
+			if (nlen < 0) {
+				err_msg("lz4 decompress error");
+				return 0;
+			}
+			Debug("decompress %d-->%d", len, nlen);
+			len = nlen;
+		} else {
+			err_msg("last byte error");
 			return 0;
 		}
-		Debug("decompress %d-->%d ", len, nlen);
-		len = nlen;
 	} else
-		memcpy(nbuf, lzbuf, len);
+		memcpy(nbuf, buf, len);
 	return len;
 #else
 	if (enc_key_len <= 0)
