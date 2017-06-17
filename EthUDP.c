@@ -1373,6 +1373,8 @@ void read_vlan_map_file(char *fname)
 	for (vlan = 0; vlan < 4096; vlan++)
 		my_vlan[vlan] = remote_vlan[vlan] = vlan;
 	fp = fopen(fname, "r");
+	if (fp == NULL)
+		return;
 	while (fgets(buf, MAXLEN, fp)) {
 		int myvlan, remotevlan;
 		char *p;
