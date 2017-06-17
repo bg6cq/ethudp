@@ -6,6 +6,28 @@ Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP
 
 [Sample config](sample/README.md)
 
+## package needs to compile
+
+CentOS:
+````
+openssl-devel lz4-devel
+````
+Debian
+````
+libssl-dev liblz4-dev
+````
+and Debian liblz4 miss LZ4_compress_fast, you need rebuild it as https://github.com/facebook/mcrouter/issues/149
+````
+apt-get install dpkg-dev debhelper
+echo "deb-src http://ftp.de.debian.org/debian/ stretch main" > /etc/apt/sources.list.d/stretch-source-packages.list
+apt-get update
+apt-get source lz4=0.0~r131-2
+cd lz4-0.0~r131
+dpkg-buildpackage -rfakeroot -uc -b
+cd ..
+dpkg -i liblz4-1_0.0~r131-2_amd64.deb liblz4-dev_0.0~r131-2_amd64.deb
+````
+
 ## Increasing Linux kernel network buffers
 
 For better performance, increase the UDP receive buffer size from 128K to 32MB
