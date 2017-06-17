@@ -1072,7 +1072,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				Debug("insert vlan id, recv len=%d", len);
 
 #ifdef TP_STATUS_VLAN_TPID_VALID
-				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? aux->tp_vlan_tpid : 0x0081)
+				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? aux->tp_vlan_tpid : 0x0081);
 #else
 				tag->vlan_tpid = 0x0081;
 #endif
