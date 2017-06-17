@@ -1283,7 +1283,7 @@ void process_udp_to_raw(int index)
 					tag->vlan_tci = htons((ntohs(tag->vlan_tci) & 0xf000) + remote_vlan[vlan]);
 					if (debug) {
 						Debug("maping vlan %d back to %d", vlan, remote_vlan[vlan]);
-						printPacket((EtherPacket *) (pbuf), len, "from remote  rawsocket:");
+						printPacket((EtherPacket *) (pbuf), len, "from remote udpsocket:");
 					}
 				}
 			}
