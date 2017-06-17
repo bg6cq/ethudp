@@ -35,6 +35,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <lz4.h>
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE		2048
@@ -106,6 +107,13 @@ int enc_key_len = 0;
 
 int fdudp[2], fdraw;
 int nat[2];
+
+int lz4 = 0;
+long long udp_total = 0;
+long long compress_overhead = 0;
+long long compress_save = 0;
+long long encrypt_overhead = 0;
+#define LZ4_SPACE 128
 
 volatile struct sockaddr_storage local_addr[2];
 volatile struct sockaddr_storage cmd_remote_addr[2];
@@ -441,32 +449,86 @@ int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 
 int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
-	if (enc_key_len <= 0)
-		return 0;	// you should not call me!
+	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
+	int nlen;
+	udp_total += len;
+	if (lz4 > 0) {
+		nlen = LZ4_compress_fast((char *)buf, (char *)lzbuf, len, len + LZ4_SPACE, lz4);
+		if (nlen <= 0) {
+			err_msg("lz4 compress error");
+			return 0;
+		}
+		Debug("compress %d-->%d save %d byte", len, nlen, len - nlen);
+		if (nlen < len) {	// compressed 
+			lzbuf[nlen] = 0xff;	// 0xff means compressed data
+			nlen++;
+			compress_save += len - nlen;
+			len = nlen;
+			buf = lzbuf;
+		} else {
+			buf[len] = 0xaa;	// 0xaa means not compressed data
+			compress_overhead++;
+			len++;
+			Debug("not compressed %d", len);
+		}
+	}
+	if (enc_key_len <= 0) {
+		memcpy(nbuf, buf, len);
+		return len;
+	}
 	if (enc_algorithm == XOR)
-		return xor_encrypt(buf, len, nbuf);
+		nlen = xor_encrypt(buf, len, nbuf);
 #ifdef ENABLE_OPENSSL
-	if ((enc_algorithm == AES_128)
-	    || (enc_algorithm == AES_192)
-	    || (enc_algorithm == AES_256))
-		return openssl_encrypt(buf, len, nbuf);
+	else if ((enc_algorithm == AES_128)
+		 || (enc_algorithm == AES_192)
+		 || (enc_algorithm == AES_256))
+		nlen = openssl_encrypt(buf, len, nbuf);
 #endif
-	return 0;
+	else
+		return 0;
+	Debug("encrypt_overhead %d", nlen - len);
+	encrypt_overhead += nlen - len;
+	return nlen;
 }
 
 int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 {
-	if (enc_key_len <= 0)
-		return 0;	// you should not call me!
-	if (enc_algorithm == XOR)
-		return xor_encrypt(buf, len, nbuf);
+	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
+	if (enc_key_len > 0) {
+		if (enc_algorithm == XOR) {
+			len = xor_encrypt(buf, len, lzbuf);
+			buf = lzbuf;
+		}
 #ifdef ENABLE_OPENSSL
-	if ((enc_algorithm == AES_128)
-	    || (enc_algorithm == AES_192)
-	    || (enc_algorithm == AES_256))
-		return openssl_decrypt(buf, len, nbuf);
+		else if ((enc_algorithm == AES_128)
+			 || (enc_algorithm == AES_192)
+			 || (enc_algorithm == AES_256)) {
+			len = openssl_decrypt(buf, len, lzbuf);
+			buf = lzbuf;
+		}
 #endif
-	return 0;
+	}
+	if ((lz4 > 0) && (len > 0)) {
+		len--;
+		if (buf[len] == 0xaa) {	// not compressed data
+			Debug("decompress not compressed data %d", len);
+			memcpy(nbuf, buf, len);
+		} else if (buf[len] == 0xff) {	// compressed data
+			int nlen;
+			nlen = LZ4_decompress_safe((char *)buf, (char *)nbuf, len, MAX_PACKET_SIZE + LZ4_SPACE);
+			if (nlen < 0) {
+				err_msg("lz4 decompress error");
+				return 0;
+			}
+			Debug("decompress %d-->%d", len, nlen);
+			len = nlen;
+		} else {
+			err_msg("last byte error 0X%02X", buf[len]);
+			return 0;
+		}
+	} else
+		memcpy(nbuf, buf, len);
+	return len;
 }
 
 char *stamp(void)
@@ -876,6 +938,9 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			if (master_slave)
 				err_msg(" slave udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[SLAVE], udp_recv_byte[SLAVE], udp_send_pkt[SLAVE],
 					udp_send_byte[SLAVE]);
+			err_msg("udp %lld bytes, lz4 save %lld bytes, lz4 overhead %lld bytes, encrypt overhead %lld bytes, %.0f%%",
+				udp_total, compress_save, compress_overhead, encrypt_overhead,
+				100.0 * (udp_total - compress_save + compress_overhead + encrypt_overhead) / udp_total);
 			got_signal = 0;
 		}
 		myticket++;
@@ -884,7 +949,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
 				Debug("send password: %s", buf);
 				len++;
-				if (enc_key_len > 0) {
+				if ((enc_key_len > 0) || (lz4 > 0)) {
 					len = do_encrypt((u_int8_t *) buf, len, nbuf);
 					pbuf = nbuf;
 				} else
@@ -896,7 +961,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 		}
 		memcpy(buf, "PING:PING:", 10);
 		len = 10;
-		if (enc_key_len > 0) {
+		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf, len, nbuf);
 			pbuf = nbuf;
 		} else
@@ -941,8 +1006,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 
 void process_raw_to_udp(void)	// used by mode==0 & mode==1
 {
-	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH];
-	u_int8_t nbuf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN];
+	u_int8_t nbuf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
 	u_int8_t *pbuf;
 	int len;
 	int offset = 0;
@@ -1043,7 +1108,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				printf("offset=%d\n", offset);
 		}
 
-		if (enc_key_len > 0) {
+		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf + offset, len, nbuf);
 			pbuf = nbuf;
 		} else
@@ -1080,7 +1145,7 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 
 void process_udp_to_raw(int index)
 {
-	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
 	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
 	u_int8_t *pbuf;
 	int len;
@@ -1104,7 +1169,7 @@ void process_udp_to_raw(int index)
 			}
 			if (len <= 0)
 				continue;
-			if (enc_key_len > 0) {
+			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
 			} else
@@ -1142,7 +1207,7 @@ void process_udp_to_raw(int index)
 			len = recv(fdudp[index], buf, MAX_PACKET_SIZE, 0);
 			if (len <= 0)
 				continue;
-			if (enc_key_len > 0) {
+			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
 			} else
@@ -1160,7 +1225,7 @@ void process_udp_to_raw(int index)
 			ping_recv[index]++;
 			memcpy(buf, "PONG:PONG:", 10);
 			len = 10;
-			if (enc_key_len > 0) {
+			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_encrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
 			} else
@@ -1269,6 +1334,7 @@ void usage(void)
 	printf("         -p password\n");
 	printf("         -enc [ xor | aes-128 | aes-192 | aes-256 ]\n");
 	printf("         -k key_string\n");
+	printf("         -lz4 [ 1 - 9 ] lz4 acceleration");
 	printf("         -d    enable debug\n");
 	printf("         -f    enable fix mss\n");
 	printf("         -r    read only of ethernet interface\n");
@@ -1287,6 +1353,7 @@ void do_benchmark(void)
 	u_int8_t buf[MAX_PACKET_SIZE];
 	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
 	unsigned long int pkt_cnt;
+	unsigned long int pkt_len = 0, pkt_len_send = 0;
 	int len;
 	struct timeval start_tm, end_tm;
 	gettimeofday(&start_tm, NULL);
@@ -1296,10 +1363,15 @@ void do_benchmark(void)
 		AES_256 ? "aes-256" : "none");
 	fprintf(stderr, "      enc_key = %s\n", enc_key);
 	fprintf(stderr, "      key_len = %d\n", enc_key_len);
+	fprintf(stderr, "          lz4 = %d\n", lz4);
 	pkt_cnt = BENCHCNT;
+	memset(buf, 'a', packet_len);
+
 	while (1) {
 		len = packet_len;
+		pkt_len += len;
 		len = do_encrypt(buf, len, nbuf);
+		pkt_len_send += len;
 		pkt_cnt--;
 		if (pkt_cnt == 0)
 			break;
@@ -1308,8 +1380,9 @@ void do_benchmark(void)
 	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000L + end_tm.tv_usec) - start_tm.tv_usec;
 	tspan = tspan / 1000000L;
 	fprintf(stderr, "%0.3f seconds\n", tspan);
-	fprintf(stderr, "PPS: %.0f PKT/S, %.0f Byte/S\n", (float)BENCHCNT / tspan, 1.0 * (packet_len) * (float)BENCHCNT / tspan);
-	fprintf(stderr, "UDP BPS: %.0f BPS\n", 8.0 * (packet_len) * (float)BENCHCNT / tspan);
+	fprintf(stderr, "PPS: %.0f PKT/S, %lu(%lu) Byte, %.0f(%.0f) Byte/S\n", (float)BENCHCNT / tspan, pkt_len, pkt_len_send, 1.0 * pkt_len / tspan,
+		1.0 * pkt_len_send / tspan);
+	fprintf(stderr, "UDP BPS: %.0f(%.0f) BPS\n", 8.0 * pkt_len / tspan, 8.0 * pkt_len_send / tspan);
 	exit(0);
 }
 
@@ -1343,7 +1416,12 @@ int main(int argc, char *argv[])
 			loopback_check = 0;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
-		else if (strcmp(argv[i], "-l") == 0) {
+		else if (strcmp(argv[i], "-lz4") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			lz4 = atoi(argv[i]);
+		} else if (strcmp(argv[i], "-l") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
@@ -1407,6 +1485,7 @@ int main(int argc, char *argv[])
 		printf("loopback_check = %d\n", loopback_check);
 		printf("    write_only = %d\n", write_only);
 		printf("     nopromisc = %d\n", nopromisc);
+		printf("           lz4 = %d\n", lz4);
 		printf("           cmd = ");
 		int n;
 		for (n = i; n < argc; n++)
