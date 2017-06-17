@@ -127,9 +127,17 @@ volatile int slave_status = STATUS_OK;
 volatile int current_remote = MASTER;
 volatile int got_signal = 1;
 
-void sig_handler(int signo)
+void sig_handler_hup(int signo)
 {
 	got_signal = 1;
+}
+
+void sig_handler_usr1(int signo)
+{
+	udp_total = compress_overhead = compress_save = encrypt_overhead = 0;
+	raw_send_pkt = raw_send_byte = raw_recv_pkt = raw_recv_byte = 0;
+	udp_send_pkt[0] = udp_send_byte[0] = udp_recv_pkt[0] = udp_recv_byte[0] = 0;
+	udp_send_pkt[1] = udp_send_byte[1] = udp_recv_pkt[1] = udp_recv_byte[1] = 0;
 }
 
 void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
@@ -1508,7 +1516,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	signal(SIGHUP, sig_handler);
+	signal(SIGHUP, sig_handler_hup);
+	signal(SIGUSR1, sig_handler_usr1);
 
 	if (mode == MODEE) {	// eth bridge mode
 		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
