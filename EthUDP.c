@@ -1447,7 +1447,7 @@ int main(int argc, char *argv[])
 			i++;
 			if (argc - i <= 0)
 				usage();
-			memset(enc_key, MAXLEN, 0);
+			memset(enc_key, 0, MAXLEN);
 			strncpy((char *)enc_key, argv[i], MAXLEN - 1);
 			enc_key_len = strlen((char *)enc_key);
 		} else
