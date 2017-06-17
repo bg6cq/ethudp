@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <syslog.h>
@@ -114,6 +115,10 @@ long long compress_overhead = 0;
 long long compress_save = 0;
 long long encrypt_overhead = 0;
 #define LZ4_SPACE 128
+
+int vlan_map = 0;
+int my_vlan[4096];
+int remote_vlan[4096];
 
 volatile struct sockaddr_storage local_addr[2];
 volatile struct sockaddr_storage cmd_remote_addr[2];
@@ -1100,14 +1105,29 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		raw_recv_byte += len;
 		if (loopback_check && do_loopback_check(buf + offset, len))
 			continue;
-		if (!read_only && fixmss)	// read only, no fix_mss
-			fix_mss(buf + offset, len, current_remote);
 		if (debug) {
 			printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 			if (offset)
 				printf("offset=%d\n", offset);
 		}
+		if (!read_only && fixmss)	// read only, no fix_mss
+			fix_mss(buf + offset, len, current_remote);
 
+		if (vlan_map && len >= 16) {
+			struct vlan_tag *tag;
+			tag = (struct vlan_tag *)(buf + offset + 12);
+			if (tag->vlan_tpid == 0x0081) {
+				int vlan;
+				vlan = ntohs(tag->vlan_tci) & 0xfff;
+				if (my_vlan[vlan] != vlan) {
+					tag->vlan_tci = htons((ntohs(tag->vlan_tci) & 0xf000) + my_vlan[vlan]);
+					if (debug) {
+						Debug("maping vlan %d to %d", vlan, my_vlan[vlan]);
+						printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
+					}
+				}
+			}
+		}
 		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf + offset, len, nbuf);
 			pbuf = nbuf;
@@ -1253,6 +1273,22 @@ void process_udp_to_raw(int index)
 			printPacket((EtherPacket *) pbuf, len, "from remote udpsocket:");
 		raw_send_pkt++;
 		raw_send_byte += len;
+
+		if (vlan_map && len >= 16) {
+			struct vlan_tag *tag;
+			tag = (struct vlan_tag *)(pbuf + 12);
+			if (tag->vlan_tpid == 0x0081) {
+				int vlan = ntohs(tag->vlan_tci) & 0xfff;
+				if (remote_vlan[vlan] != vlan) {
+					tag->vlan_tci = htons((ntohs(tag->vlan_tci) & 0xf000) + remote_vlan[vlan]);
+					if (debug) {
+						Debug("maping vlan %d back to %d", vlan, remote_vlan[vlan]);
+						printPacket((EtherPacket *) (pbuf), len, "from remote  rawsocket:");
+					}
+				}
+			}
+		}
+
 		if (mode == MODEE) {
 			struct sockaddr_ll sll;
 			memset(&sll, 0, sizeof(sll));
@@ -1321,6 +1357,36 @@ int open_tun(const char *dev, char **actual)
 	return fd;
 }
 
+void read_vlan_map_file(char *fname)
+{
+	int vlan;
+	FILE *fp;
+	char buf[MAXLEN];
+	for (vlan = 0; vlan < 4096; vlan++)
+		my_vlan[vlan] = remote_vlan[vlan] = vlan;
+	fp = fopen(fname, "r");
+	while (fgets(buf, MAXLEN, fp)) {
+		int myvlan, remotevlan;
+		char *p;
+		p = buf;
+		while (isblank(*p))
+			p++;
+		if (!isdigit(*p))
+			continue;
+		myvlan = atoi(p);
+		while (isdigit(*p))
+			p++;
+		while (isblank(*p))
+			p++;
+		if (!isdigit(*p))
+			continue;
+		remotevlan = atoi(p);
+		my_vlan[myvlan] = remotevlan;
+		remote_vlan[remotevlan] = myvlan;
+	}
+	fclose(fp);
+}
+
 void usage(void)
 {
 	printf("Usage:\n");
@@ -1334,7 +1400,8 @@ void usage(void)
 	printf("         -p password\n");
 	printf("         -enc [ xor | aes-128 | aes-192 | aes-256 ]\n");
 	printf("         -k key_string\n");
-	printf("         -lz4 [ 1 - 9 ] lz4 acceleration");
+	printf("         -lz4 [ 0 - 9 ]     lz4 acceleration, default is 0(disable)");
+	printf("         -m vlanmap.txt     vlan maping");
 	printf("         -d    enable debug\n");
 	printf("         -f    enable fix mss\n");
 	printf("         -r    read only of ethernet interface\n");
@@ -1416,7 +1483,13 @@ int main(int argc, char *argv[])
 			loopback_check = 0;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
-		else if (strcmp(argv[i], "-lz4") == 0) {
+		else if (strcmp(argv[i], "-m") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			vlan_map = 1;
+			read_vlan_map_file(argv[i]);
+		} else if (strcmp(argv[i], "-lz4") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
@@ -1490,6 +1563,14 @@ int main(int argc, char *argv[])
 		int n;
 		for (n = i; n < argc; n++)
 			printf("%s ", argv[n]);
+		printf("\n");
+		if (vlan_map) {
+			int vlan;
+			printf("vlan mapping\n");
+			for (vlan = 0; vlan < 4095; vlan++)
+				if (my_vlan[vlan] != vlan)
+					printf(" % 4d --> % 4d\n", vlan, my_vlan[vlan]);
+		}
 		printf("\n");
 	}
 
