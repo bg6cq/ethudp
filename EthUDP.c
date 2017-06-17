@@ -132,9 +132,17 @@ volatile int slave_status = STATUS_OK;
 volatile int current_remote = MASTER;
 volatile int got_signal = 1;
 
-void sig_handler(int signo)
+void sig_handler_hup(int signo)
 {
 	got_signal = 1;
+}
+
+void sig_handler_usr1(int signo)
+{
+	udp_total = compress_overhead = compress_save = encrypt_overhead = 0;
+	raw_send_pkt = raw_send_byte = raw_recv_pkt = raw_recv_byte = 0;
+	udp_send_pkt[0] = udp_send_byte[0] = udp_recv_pkt[0] = udp_recv_byte[0] = 0;
+	udp_send_pkt[1] = udp_send_byte[1] = udp_recv_pkt[1] = udp_recv_byte[1] = 0;
 }
 
 void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
@@ -1077,7 +1085,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				Debug("insert vlan id, recv len=%d", len);
 
 #ifdef TP_STATUS_VLAN_TPID_VALID
-				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? aux->tp_vlan_tpid : 0x0081)
+				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? aux->tp_vlan_tpid : 0x0081);
 #else
 				tag->vlan_tpid = 0x0081;
 #endif
@@ -1520,7 +1528,7 @@ int main(int argc, char *argv[])
 			i++;
 			if (argc - i <= 0)
 				usage();
-			memset(enc_key, MAXLEN, 0);
+			memset(enc_key, 0, MAXLEN);
 			strncpy((char *)enc_key, argv[i], MAXLEN - 1);
 			enc_key_len = strlen((char *)enc_key);
 		} else
@@ -1589,7 +1597,8 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	signal(SIGHUP, sig_handler);
+	signal(SIGHUP, sig_handler_hup);
+	signal(SIGUSR1, sig_handler_usr1);
 
 	if (mode == MODEE) {	// eth bridge mode
 		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
