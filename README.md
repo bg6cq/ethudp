@@ -175,24 +175,16 @@ Using master udp connection, switch to slave if master down(send/recv ping/pong 
 ````
 ./EthUDP ... -enc aes-128 -k aes_key ...
 ````
-
-
-常用模式：
-某Linux服务器B，对外有NAT，因此无法直接从外网访问或管理。
-
-借助某台有公网IP的Linux服务器A，利用UDP数据包建立一个隧道接口，只要B和A能使用UDP通信，就可以从A上直接登录B。
-
-具体做法为：
-1. 假定A的公网IP是 IPA，通信使用UDP 6000端口，新建的隧道接口A的IP是 ipa/24，密码为password，A上运行
+7. support LZ4 compress
 ````
-./EthUDP -i -p password IPA 6000 0.0.0.0 0 ipa 24
+./EthUDP ... -lz4 1 ...
 ````
-2. 假定B的隧道接口是ipb/24，B上运行
+8. support VLAN maping
 ````
-./EthUDP -i -p password 0.0.0.0 0 IPA 6000 ipb 24
-````
-此后，A和B可以通过 ipa/ipb 互相通信
+./EthUDP ... -m vlanmap.txt ...
 
-从公网仅仅能看到B与A的6000端口之间有UDP通信
-
-注意：密码和所有数据包均明文传输
+vlanmap.txt
+#my_vlan remote_vlan
+10 30
+40 100
+````
