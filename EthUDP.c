@@ -536,7 +536,7 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 			Debug("decompress %d-->%d", len, nlen);
 			len = nlen;
 		} else {
-			err_msg("last byte error 0X%02X", buf[len]);
+			err_msg("len %d last byte error 0x%02X", len, buf[len]);
 			return 0;
 		}
 	} else
