@@ -1383,14 +1383,14 @@ void read_vlan_map_file(char *fname)
 			p++;
 		if (!isdigit(*p))
 			continue;
-		myvlan = atoi(p);
+		myvlan = atoi(p) & 0xfff;
 		while (isdigit(*p))
 			p++;
 		while (isblank(*p))
 			p++;
 		if (!isdigit(*p))
 			continue;
-		remotevlan = atoi(p);
+		remotevlan = atoi(p) & 0xfff;
 		my_vlan[myvlan] = remotevlan;
 		remote_vlan[remotevlan] = myvlan;
 	}
@@ -1406,20 +1406,20 @@ void usage(void)
 	printf("            [ localip localport remoteip remoteport ]\n");
 	printf("./EthUDP -b [ options ] localip localport remoteip remoteport bridge \\\n");
 	printf("            [ localip localport remoteip remoteport ]\n");
-	printf("     options:\n");
-	printf("         -p password\n");
-	printf("         -enc [ xor | aes-128 | aes-192 | aes-256 ]\n");
-	printf("         -k key_string\n");
-	printf("         -lz4 [ 0 - 9 ]     lz4 acceleration, default is 0(disable)");
-	printf("         -m vlanmap.txt     vlan maping");
-	printf("         -d    enable debug\n");
-	printf("         -f    enable fix mss\n");
-	printf("         -r    read only of ethernet interface\n");
-	printf("         -w    write only of ethernet interface\n");
-	printf("         -B    benchmark\n");
-	printf("         -l    packet_len\n");
-	printf("         -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
-	printf("         -noloopcheck  do not check loopback(-r default do check)\n");
+	printf(" options:\n");
+	printf("    -p password\n");
+	printf("    -enc [ xor|aes-128|aes-192|aes-256 ]\n");
+	printf("    -k key_string\n");
+	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 9 is fast");
+	printf("    -m vlanmap.txt   vlan maping");
+	printf("    -d    enable debug\n");
+	printf("    -f    enable fix mss\n");
+	printf("    -r    read only of ethernet interface\n");
+	printf("    -w    write only of ethernet interface\n");
+	printf("    -B    benchmark\n");
+	printf("    -l    packet_len\n");
+	printf("    -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
+	printf("    -noloopcheck  do not check loopback(-r default do check)\n");
 	exit(0);
 }
 
