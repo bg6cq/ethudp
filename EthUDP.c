@@ -1410,8 +1410,8 @@ void usage(void)
 	printf("         -p password\n");
 	printf("         -enc [ xor | aes-128 | aes-192 | aes-256 ]\n");
 	printf("         -k key_string\n");
-	printf("         -lz4 [ 0 - 9 ]     lz4 acceleration, default is 0(disable)");
-	printf("         -m vlanmap.txt     vlan maping");
+	printf("         -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
+	printf("         -m vlanmap.txt     vlan maping\n");
 	printf("         -d    enable debug\n");
 	printf("         -f    enable fix mss\n");
 	printf("         -r    read only of ethernet interface\n");
