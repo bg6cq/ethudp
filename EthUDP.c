@@ -110,10 +110,10 @@ int fdudp[2], fdraw;
 int nat[2];
 
 int lz4 = 0;
-long long udp_total = 0;
-long long compress_overhead = 0;
-long long compress_save = 0;
-long long encrypt_overhead = 0;
+volatile long long udp_total = 0;
+volatile long long compress_overhead = 0;
+volatile long long compress_save = 0;
+volatile long long encrypt_overhead = 0;
 #define LZ4_SPACE 128
 
 int vlan_map = 0;
@@ -125,8 +125,8 @@ volatile struct sockaddr_storage cmd_remote_addr[2];
 volatile struct sockaddr_storage remote_addr[2];
 volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
-volatile u_int32_t raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
-volatile u_int32_t udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
+volatile long long raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
+volatile long long udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
 volatile int master_status = STATUS_OK;
 volatile int slave_status = STATUS_OK;
 volatile int current_remote = MASTER;
