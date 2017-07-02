@@ -14,7 +14,7 @@ ip route add 0/0 via 222.195.81.1
 ip link set eth1 mtu 1508
 ip link set eth1 up
 
-/usr/src/ethudp//EthUDP -e 222.195.81.240 6000 202.38.64.144 6000 eth1 \
+/usr/src/ethudp/EthUDP -e 222.195.81.240 6000 202.38.64.144 6000 eth1 \
 	222.195.81.240 7000 202.38.64.144 7000
 ````
 
