@@ -14,7 +14,7 @@ ip route add 0/0 via 222.195.81.1
 ip link set eth1 mtu 1508
 ip link set eth1 up
 
-/usr/src/ethudp//EthUDP -e 222.195.81.240 6000 202.38.64.144 6000 eth1 \
+/usr/src/ethudp/EthUDP -e 222.195.81.240 6000 202.38.64.144 6000 eth1 \
 	222.195.81.240 7000 202.38.64.144 7000
 ````
 
@@ -22,7 +22,7 @@ On server B /etc/rc.local
 ````
 ip add add 202.38.64.144/24 dev eth0
 ip link set eth0 up
-ip route add 0/0 via 202.38.64.254
+ip route add 0/0 via 202.38.64.1
 
 ip link set eth1 mtu 1508
 ip link set eth1 up
