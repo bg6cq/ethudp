@@ -103,7 +103,9 @@ int32_t ifindex;
 char mypassword[MAXLEN];
 int enc_algorithm;
 unsigned char enc_key[MAXLEN];
+#ifdef ENABLE_OPENSSL
 unsigned char enc_iv[EVP_MAX_IV_LENGTH];
+#endif
 int enc_key_len = 0;
 
 int fdudp[2], fdraw;
@@ -1427,6 +1429,7 @@ void usage(void)
 
 void do_benchmark(void)
 {
+#ifdef ENABLE_OPENSSL
 	u_int8_t buf[MAX_PACKET_SIZE];
 	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
 	unsigned long int pkt_cnt;
@@ -1460,6 +1463,7 @@ void do_benchmark(void)
 	fprintf(stderr, "PPS: %.0f PKT/S, %lu(%lu) Byte, %.0f(%.0f) Byte/S\n", (float)BENCHCNT / tspan, pkt_len, pkt_len_send, 1.0 * pkt_len / tspan,
 		1.0 * pkt_len_send / tspan);
 	fprintf(stderr, "UDP BPS: %.0f(%.0f) BPS\n", 8.0 * pkt_len / tspan, 8.0 * pkt_len_send / tspan);
+#endif
 	exit(0);
 }
 
@@ -1520,12 +1524,14 @@ int main(int argc, char *argv[])
 				usage();
 			if (strcmp(argv[i], "xor") == 0)
 				enc_algorithm = XOR;
+#ifdef ENABLE_OPENSSL
 			else if (strcmp(argv[i], "aes-128") == 0)
 				enc_algorithm = AES_128;
 			else if (strcmp(argv[i], "aes-192") == 0)
 				enc_algorithm = AES_192;
 			else if (strcmp(argv[i], "aes-256") == 0)
 				enc_algorithm = AES_256;
+#endif
 		} else if (strcmp(argv[i], "-k") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1557,9 +1563,11 @@ int main(int argc, char *argv[])
 		printf("         debug = 1\n");
 		printf("          mode = %d (0 raw eth bridge, 1 interface, 2 bridge)\n", mode);
 		printf("      password = %s\n", mypassword);
-		printf(" enc_algorithm = %s\n",
-		       enc_algorithm == XOR ? "xor" : enc_algorithm == AES_128 ? "aes-128" : enc_algorithm == AES_192 ? "aes-192" : enc_algorithm ==
-		       AES_256 ? "aes-256" : "none");
+		printf(" enc_algorithm = %s\n", enc_algorithm == XOR ? "xor"
+#ifdef ENABLE_OPENSSL
+		       : enc_algorithm == AES_128 ? "aes-128" : enc_algorithm == AES_192 ? "aes-192" : enc_algorithm == AES_256 ? "aes-256"
+#endif
+		       : "none");
 		printf("       enc_key = %s\n", enc_key);
 		printf("       key_len = %d\n", enc_key_len);
 		printf("  master_slave = %d\n", master_slave);
