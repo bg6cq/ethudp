@@ -2,8 +2,8 @@
 
 Ethernet over UDP sample
 
-[best hardware][https://detail.tmall.com/item.htm?id=553661921148]
-![best hardward][x1l.jpg]
+[best hardware](https://detail.tmall.com/item.htm?id=553661921148)
+![best hardward](x1l.jpg)
 ![sample network](sample.png)
 
 
