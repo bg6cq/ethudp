@@ -97,6 +97,7 @@ int fixmss = 0;
 int nopromisc = 0;
 int loopback_check = 0;
 int packet_len = 1500;
+char name[MAXLEN];
 
 int32_t ifindex;
 
@@ -160,9 +161,16 @@ void err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 	strcat(buf, "\n");
 
 	if (daemon_proc) {
-		syslog(level, "%s", buf);
+		if (name[0])
+			syslog(level, "%s: %s", name, buf);
+		else
+			syslog(level, "%s", buf);
 	} else {
 		fflush(stdout);	/* in case stdout and stderr are the same */
+		if (name[0]) {
+			fputs(name, stderr);
+			fputs(": ", stderr);
+		}
 		fputs(buf, stderr);
 		fflush(stderr);
 	}
@@ -930,8 +938,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
 
-			err_msg("============= myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d", (unsigned long)myticket,
-				master_slave, master_status, slave_status);
+			err_msg("============= myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d, loopback_check=%d", (unsigned long)myticket,
+				master_slave, master_status, slave_status, loopback_check);
 			print_addrinfo(MASTER);
 			if (master_slave)
 				print_addrinfo(SLAVE);
@@ -1413,6 +1421,7 @@ void usage(void)
 	printf("    -k key_string\n");
 	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
 	printf("    -m vlanmap.txt   vlan maping\n");
+	printf("    -n name          name for syslog prefix\n");
 	printf("    -d    enable debug\n");
 	printf("    -f    enable fix mss\n");
 	printf("    -r    read only of ethernet interface\n");
@@ -1421,6 +1430,7 @@ void usage(void)
 	printf("    -l    packet_len\n");
 	printf("    -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
 	printf("    -noloopcheck  do not check loopback(-r default do check)\n");
+	printf("    -loopcheck    do check loopback\n");
 	exit(0);
 }
 
@@ -1494,6 +1504,8 @@ int main(int argc, char *argv[])
 			nopromisc = 1;
 		else if (strcmp(argv[i], "-noloopcheck") == 0)
 			loopback_check = 0;
+		else if (strcmp(argv[i], "-loopcheck") == 0)
+			loopback_check = 1;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
 		else if (strcmp(argv[i], "-m") == 0) {
@@ -1502,6 +1514,11 @@ int main(int argc, char *argv[])
 				usage();
 			vlan_map = 1;
 			read_vlan_map_file(argv[i]);
+		} else if (strcmp(argv[i], "-n") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			strncpy(name, argv[i], MAXLEN - 1);
 		} else if (strcmp(argv[i], "-lz4") == 0) {
 			i++;
 			if (argc - i <= 0)
