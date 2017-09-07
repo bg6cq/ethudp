@@ -39,7 +39,7 @@
 #include <lz4.h>
 
 #define MAXLEN 			2048
-#define MAX_PACKET_SIZE		65536
+#define MAX_PACKET_SIZE		2048
 #define MAXFD   		64
 
 #define STATUS_BAD 	0
@@ -1059,6 +1059,10 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			len = recvmsg(fdraw, &msg, MSG_TRUNC);
 			if (len <= 0)
 				continue;
+			if (len >= MAX_PACKET_SIZE) {
+				err_msg("recv long pkt from raw, len=%d", len);
+				len = MAX_PACKET_SIZE;
+			}
 			for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 				struct tpacket_auxdata *aux;
 				struct vlan_tag *tag;
@@ -1108,9 +1112,13 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 #else
 			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
 #endif
-		} else if ((mode == MODEI) || (mode == MODEB))
+		} else if ((mode == MODEI) || (mode == MODEB)) {
 			len = read(fdraw, buf, MAX_PACKET_SIZE);
-		else
+			if (len >= MAX_PACKET_SIZE) {
+				err_msg("recv long pkt from raw, len=%d", len);
+				len = MAX_PACKET_SIZE;
+			}
+		} else
 			return;
 
 		if (len <= 0)
@@ -1206,6 +1214,10 @@ void process_udp_to_raw(int index)
 			}
 			if (len <= 0)
 				continue;
+			if (len >= MAX_PACKET_SIZE) {
+				err_msg("recv long pkt from udp, len=%d", len);
+				len = MAX_PACKET_SIZE;
+			}
 			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
@@ -1242,6 +1254,10 @@ void process_udp_to_raw(int index)
 			}
 		} else {
 			len = recv(fdudp[index], buf, MAX_PACKET_SIZE, 0);
+			if (len >= MAX_PACKET_SIZE) {
+				err_msg("recv long pkt from UDP, len=%d", len);
+				len = MAX_PACKET_SIZE;
+			}
 			if (len <= 0)
 				continue;
 			if ((enc_key_len > 0) || (lz4 > 0)) {
