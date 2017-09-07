@@ -39,7 +39,7 @@
 #include <lz4.h>
 
 #define MAXLEN 			2048
-#define MAX_PACKET_SIZE		2048
+#define MAX_PACKET_SIZE		65536
 #define MAXFD   		64
 
 #define STATUS_BAD 	0
