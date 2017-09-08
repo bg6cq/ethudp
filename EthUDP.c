@@ -98,6 +98,7 @@ int nopromisc = 0;
 int loopback_check = 0;
 int packet_len = 1500;
 char name[MAXLEN];
+char run_cmd[MAXLEN];
 
 int32_t ifindex;
 
@@ -329,7 +330,7 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 /**
  * Open a rawsocket for the network interface
  */
-int32_t open_socket(char *ifname, int32_t * rifindex)
+int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 {
 	unsigned char buf[MAX_PACKET_SIZE];
 	int32_t ifindex;
@@ -1438,6 +1439,7 @@ void usage(void)
 	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
 	printf("    -m vlanmap.txt   vlan maping\n");
 	printf("    -n name          name for syslog prefix\n");
+	printf("    -c run_cmd       run run_cmd after tunnel connected\n");
 	printf("    -d    enable debug\n");
 	printf("    -f    enable fix mss\n");
 	printf("    -r    read only of ethernet interface\n");
@@ -1571,6 +1573,12 @@ int main(int argc, char *argv[])
 			memset(enc_key, 0, MAXLEN);
 			strncpy((char *)enc_key, argv[i], MAXLEN - 1);
 			enc_key_len = strlen((char *)enc_key);
+		} else if (strcmp(argv[i], "-c") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			memset(run_cmd, 0, MAXLEN);
+			strncpy((char *)run_cmd, argv[i], MAXLEN - 1);
 		} else
 			got_one = 0;
 		if (got_one)
@@ -1609,7 +1617,8 @@ int main(int argc, char *argv[])
 		printf("    write_only = %d\n", write_only);
 		printf("     nopromisc = %d\n", nopromisc);
 		printf("           lz4 = %d\n", lz4);
-		printf("           cmd = ");
+		printf("       run_cmd = %s\n", run_cmd);
+		printf("      cmd_line = ");
 		int n;
 		for (n = i; n < argc; n++)
 			printf("%s ", argv[n]);
@@ -1646,7 +1655,7 @@ int main(int argc, char *argv[])
 		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
 		if (master_slave)
 			fdudp[SLAVE] = udp_xconnect(argv[i + 5], argv[i + 6], argv[i + 7], argv[i + 8], SLAVE);
-		fdraw = open_socket(argv[i + 4], &ifindex);
+		fdraw = open_rawsocket(argv[i + 4], &ifindex);
 	} else if (mode == MODEI) {	// interface mode
 		char *actualname = NULL;
 		char buf[MAXLEN];
@@ -1673,6 +1682,11 @@ int main(int argc, char *argv[])
 		system(buf);
 		if (debug)
 			system("/sbin/ip addr");
+	}
+	if (run_cmd[0]) {	// run command when tunnel connected
+		if (debug)
+			printf(" run user cmd: %s\n", run_cmd);
+		system(run_cmd);
 	}
 	// create a pthread to forward packets from master udp to raw
 	if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_master, NULL)
