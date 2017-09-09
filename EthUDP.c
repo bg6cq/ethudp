@@ -56,6 +56,10 @@
 //#define DEBUGPINGPONG 1
 //#define DEBUGSSL      1
 
+// ip & brctl command
+#define IPCMD 		"/sbin/ip"
+#define BRIDGECMD	"/usr/sbin/brctl"
+
 #ifdef ENABLE_OPENSSL
 #include <openssl/evp.h>
 #define AES_128 2
@@ -99,6 +103,7 @@ int loopback_check = 0;
 int packet_len = 1500;
 char name[MAXLEN];
 char run_cmd[MAXLEN];
+char dev_name[MAXLEN];
 
 int32_t ifindex;
 
@@ -1440,6 +1445,7 @@ void usage(void)
 	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
 	printf("    -mss mss         change tcp SYN mss\n");
 	printf("    -map vlanmap.txt vlan maping\n");
+	printf("    -dev dev_name    rename tap interface to dev_name(mode i & b)\n");
 	printf("    -n name          name for syslog prefix\n");
 	printf("    -c run_cmd       run run_cmd after tunnel connected\n");
 	printf("    -d    enable debug\n");
@@ -1536,6 +1542,11 @@ int main(int argc, char *argv[])
 				usage();
 			vlan_map = 1;
 			read_vlan_map_file(argv[i]);
+		} else if (strcmp(argv[i], "-dev") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			strncpy(dev_name, argv[i], MAXLEN - 1);
 		} else if (strcmp(argv[i], "-n") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1621,6 +1632,7 @@ int main(int argc, char *argv[])
 		printf("    write_only = %d\n", write_only);
 		printf("     nopromisc = %d\n", nopromisc);
 		printf("           lz4 = %d\n", lz4);
+		printf("      dev_name = %s\n", dev_name);
 		printf("       run_cmd = %s\n", run_cmd);
 		printf("      cmd_line = ");
 		int n;
@@ -1667,12 +1679,19 @@ int main(int argc, char *argv[])
 		if (master_slave)
 			fdudp[SLAVE] = udp_xconnect(argv[i + 6], argv[i + 7], argv[i + 8], argv[i + 9], SLAVE);
 		fdraw = open_tun("tap", &actualname);
-		snprintf(buf, MAXLEN, "/sbin/ip addr add %s/%s dev %s; /sbin/ip link set %s up", argv[i + 4], argv[i + 5], actualname, actualname);
+		if (dev_name[0])
+			snprintf(buf, MAXLEN, "%s link set %s name %s; %s addr add %s/%s dev %s; %s link set %s up",
+				 IPCMD, actualname, dev_name, IPCMD, argv[i + 4], argv[i + 5], dev_name, IPCMD, dev_name);
+		else
+			snprintf(buf, MAXLEN, "%s addr add %s/%s dev %s; %s link set %s up",
+				IPCMD, argv[i + 4], argv[i + 5], actualname, IPCMD, actualname);
 		if (debug)
 			printf(" run cmd: %s\n", buf);
 		system(buf);
-		if (debug)
-			system("/sbin/ip addr");
+		if (debug) {
+			snprintf(buf, MAXLEN, "%s addr", IPCMD);
+			system(buf);
+		}
 	} else if (mode == MODEB) {	// bridge mode
 		char *actualname = NULL;
 		char buf[MAXLEN];
@@ -1680,12 +1699,21 @@ int main(int argc, char *argv[])
 		if (master_slave)
 			fdudp[SLAVE] = udp_xconnect(argv[i + 5], argv[i + 6], argv[i + 7], argv[i + 8], SLAVE);
 		fdraw = open_tun("tap", &actualname);
-		snprintf(buf, MAXLEN, "/sbin/ip link set %s up; brctl addif %s %s", actualname, argv[i + 4], actualname);
+		if (dev_name[0])
+			snprintf(buf, MAXLEN, "%s link set %s name %s; %s link set %s up; %s addif %s %s",
+				IPCMD, actualname, dev_name, IPCMD, dev_name, BRIDGECMD, argv[i + 4], dev_name);
+		else
+			snprintf(buf, MAXLEN, "%s link set %s up; %s addif %s %s",
+				IPCMD, actualname, BRIDGECMD, argv[i + 4], actualname);
 		if (debug)
 			printf(" run cmd: %s\n", buf);
 		system(buf);
-		if (debug)
-			system("/sbin/ip addr");
+		if (debug) {
+			snprintf(buf, MAXLEN, "%s addr", IPCMD);
+			system(buf);
+			snprintf(buf, MAXLEN, "%s show", BRIDGECMD);
+			system(buf);
+		}
 	}
 	if (run_cmd[0]) {	// run command when tunnel connected
 		if (debug)
