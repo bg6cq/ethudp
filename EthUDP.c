@@ -704,13 +704,15 @@ void fix_mss(u_int8_t * buf, int len, int index)
 		for (i = sizeof(struct tcphdr); i < tcph->doff * 4; i += optlen(opt, i)) {
 			if (opt[i] == 2 && tcph->doff * 4 - i >= 4 &&	// TCP_MSS
 			    opt[i + 1] == 4) {
-				u_int16_t newmss = 0, oldmss;
+				u_int16_t newmss = fixmss, oldmss;
+/*
 				if (local_addr[index].ss_family == PF_INET)
 					newmss = 1418;
 				else if (local_addr[index].ss_family == PF_INET6)
 					newmss = 1398;
 				if (VLANdot1Q)
 					newmss -= 4;
+*/
 				oldmss = (opt[i + 2] << 8) | opt[i + 3];
 				/* Never increase MSS, even when setting it, as
 				 * doing so results in problems for hosts that rely
@@ -729,7 +731,6 @@ void fix_mss(u_int8_t * buf, int len, int index)
 				return;
 			}
 		}
-		return;
 	} else if ((packet[0] == 0x86) && (packet[1] == 0xdd)) {	// IPv6 packet, 0x86dd
 		packet += 2;
 		len -= 2;
@@ -750,13 +751,15 @@ void fix_mss(u_int8_t * buf, int len, int index)
 		for (i = sizeof(struct tcphdr); i < tcph->doff * 4; i += optlen(opt, i)) {
 			if (opt[i] == 2 && tcph->doff * 4 - i >= 4 &&	// TCP_MSS
 			    opt[i + 1] == 4) {
-				u_int16_t newmss = 0, oldmss;
+				u_int16_t newmss = fixmss, oldmss;
+/*
 				if (local_addr[index].ss_family == PF_INET)
 					newmss = 1398;
 				else if (local_addr[index].ss_family == PF_INET6)
 					newmss = 1378;
 				if (VLANdot1Q)
 					newmss -= 4;
+*/
 				oldmss = (opt[i + 2] << 8) | opt[i + 3];
 				/* Never increase MSS, even when setting it, as
 				 * doing so results in problems for hosts that rely
@@ -777,9 +780,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 				return;
 			}
 		}
-		return;
-	} else
-		return;		// not IP packet
+	}
 }
 
 /*  return 1 if packet will cause loopback, DSTIP or SRCIP == remote address && PROTO == UDP
@@ -1437,11 +1438,11 @@ void usage(void)
 	printf("    -enc [ xor|aes-128|aes-192|aes-256 ]\n");
 	printf("    -k key_string\n");
 	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
-	printf("    -m vlanmap.txt   vlan maping\n");
+	printf("    -mss mss         change tcp SYN mss\n");
+	printf("    -map vlanmap.txt vlan maping\n");
 	printf("    -n name          name for syslog prefix\n");
 	printf("    -c run_cmd       run run_cmd after tunnel connected\n");
 	printf("    -d    enable debug\n");
-	printf("    -f    enable fix mss\n");
 	printf("    -r    read only of ethernet interface\n");
 	printf("    -w    write only of ethernet interface\n");
 	printf("    -B    benchmark\n");
@@ -1511,8 +1512,6 @@ int main(int argc, char *argv[])
 			mode = MODEB;
 		else if (strcmp(argv[i], "-d") == 0)
 			debug = 1;
-		else if (strcmp(argv[i], "-f") == 0)
-			fixmss = 1;
 		else if (strcmp(argv[i], "-r") == 0) {
 			read_only = 1;
 			loopback_check = 1;
@@ -1526,7 +1525,12 @@ int main(int argc, char *argv[])
 			loopback_check = 1;
 		else if (strcmp(argv[i], "-B") == 0)
 			do_benchmark();
-		else if (strcmp(argv[i], "-m") == 0) {
+		else if (strcmp(argv[i], "-mss") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			fixmss = atoi(argv[i]);
+		} else if (strcmp(argv[i], "-map") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
@@ -1611,7 +1615,7 @@ int main(int argc, char *argv[])
 		printf("       enc_key = %s\n", enc_key);
 		printf("       key_len = %d\n", enc_key_len);
 		printf("  master_slave = %d\n", master_slave);
-		printf("        fixmss = %d\n", fixmss);
+		printf("           mss = %d\n", fixmss);
 		printf("     read_only = %d\n", read_only);
 		printf("loopback_check = %d\n", loopback_check);
 		printf("    write_only = %d\n", write_only);
