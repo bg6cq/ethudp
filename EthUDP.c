@@ -302,22 +302,22 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 	do {
 		int len;
 		void *raddr;
-		if(res->ai_family == AF_INET) { // IPv4
-		      	struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
-      			raddr = &(ipv4->sin_addr);
+		if (res->ai_family == AF_INET) {	// IPv4
+			struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
+			raddr = &(ipv4->sin_addr);
 			len = 4;
-    		} else { // IPv6
-      			struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)res->ai_addr;
-      			raddr = &(ipv6->sin6_addr);
+		} else {	// IPv6
+			struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)res->ai_addr;
+			raddr = &(ipv6->sin6_addr);
 			len = 16;
 		}
-		
-		if(memcmp(raddr,"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",len)==0) {
+
+		if (memcmp(raddr, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", len) == 0) {
 			Debug("remote_addr == 0, nat = 1");
 			nat[index] = 1;
 			memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
 			return sockfd;
-    		}
+		}
 
 		if (((struct sockaddr_in *)res->ai_addr)->sin_port == 0) {
 			Debug("port==0, nat = 1");
@@ -343,9 +343,8 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
 	if (debug) {
 		socklen_t ln;
-		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
+		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0)
 			Debug("UDP socket RCVBUF setting to %d\n", n);
-		}
 	}
 
 	return (sockfd);
@@ -1197,8 +1196,8 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 	if (rmt->ss_family == AF_INET) {
 		struct sockaddr_in *r = (struct sockaddr_in *)rmt;
 		struct sockaddr_in *cmdr = (struct sockaddr_in *)&cmd_remote_addr[index];
-		if ( ((cmdr->sin_addr.s_addr == 0) || (cmdr->sin_addr.s_addr == r->sin_addr.s_addr)) 
-		   &&((cmdr->sin_port == 0) || (cmdr->sin_port == r->sin_port))) {
+		if (((cmdr->sin_addr.s_addr == 0) || (cmdr->sin_addr.s_addr == r->sin_addr.s_addr))
+		    && ((cmdr->sin_port == 0) || (cmdr->sin_port == r->sin_port))) {
 			memcpy((void *)&remote_addr[index], rmt, sock_len);
 			err_msg("nat mode, change remote to %s:%d", inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
 		} else
@@ -1207,8 +1206,8 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 		struct sockaddr_in6 *r = (struct sockaddr_in6 *)rmt;
 		struct sockaddr_in6 *cmdr = (struct sockaddr_in6 *)&cmd_remote_addr[index];
 		struct in6_addr ia6 = IN6ADDR_ANY_INIT;
-		if ( ((memcmp(&ia6, &cmdr->sin6_addr, 16) == 0) || (memcmp(&r->sin6_addr, &cmdr->sin6_addr, 16) == 0))
-		   &&((cmdr->sin6_port == 0) || (cmdr->sin6_port == r->sin6_port))) {
+		if (((memcmp(&ia6, &cmdr->sin6_addr, 16) == 0) || (memcmp(&r->sin6_addr, &cmdr->sin6_addr, 16) == 0))
+		    && ((cmdr->sin6_port == 0) || (cmdr->sin6_port == r->sin6_port))) {
 			memcpy((void *)&remote_addr[index], rmt, sock_len);
 			err_msg("nat mode, change remote to [%s]:%d", inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 		}
