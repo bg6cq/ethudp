@@ -673,7 +673,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 {
 	u_int8_t *packet;
 	int i;
-//	int VLANdot1Q = 0;
+//      int VLANdot1Q = 0;
 
 	if (len < 54)
 		return;
@@ -683,7 +683,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 	if ((packet[0] == 0x81) && (packet[1] == 0x00)) {	// skip 802.1Q tag 0x8100
 		packet += 4;
 		len -= 4;
-//		VLANdot1Q = 1;
+//              VLANdot1Q = 1;
 	}
 	if ((packet[0] == 0x08) && (packet[1] == 0x00)) {	// IPv4 packet 0x0800
 		packet += 2;
@@ -1385,14 +1385,13 @@ int open_tun(const char *dev, char **actual)
 	size = strlen(ifr.ifr_name) + 1;
 	*actual = (char *)malloc(size);
 	memcpy(*actual, ifr.ifr_name, size);
+	// the following maybe no use
 	int n = 40 * 1024 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
 	if (debug) {
-		socklen_t ln;
-		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
+		socklen_t ln = sizeof(n);
+		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0)
 			Debug("RAW socket RCVBUF setting to %d", n);
-		} else
-			Debug("RAW socket getopt error");
 	}
 	return fd;
 }
@@ -1683,8 +1682,7 @@ int main(int argc, char *argv[])
 			snprintf(buf, MAXLEN, "%s link set %s name %s; %s addr add %s/%s dev %s; %s link set %s up",
 				 IPCMD, actualname, dev_name, IPCMD, argv[i + 4], argv[i + 5], dev_name, IPCMD, dev_name);
 		else
-			snprintf(buf, MAXLEN, "%s addr add %s/%s dev %s; %s link set %s up",
-				IPCMD, argv[i + 4], argv[i + 5], actualname, IPCMD, actualname);
+			snprintf(buf, MAXLEN, "%s addr add %s/%s dev %s; %s link set %s up", IPCMD, argv[i + 4], argv[i + 5], actualname, IPCMD, actualname);
 		if (debug)
 			printf(" run cmd: %s\n", buf);
 		system(buf);
@@ -1701,10 +1699,9 @@ int main(int argc, char *argv[])
 		fdraw = open_tun("tap", &actualname);
 		if (dev_name[0])
 			snprintf(buf, MAXLEN, "%s link set %s name %s; %s link set %s up; %s addif %s %s",
-				IPCMD, actualname, dev_name, IPCMD, dev_name, BRIDGECMD, argv[i + 4], dev_name);
+				 IPCMD, actualname, dev_name, IPCMD, dev_name, BRIDGECMD, argv[i + 4], dev_name);
 		else
-			snprintf(buf, MAXLEN, "%s link set %s up; %s addif %s %s",
-				IPCMD, actualname, BRIDGECMD, argv[i + 4], actualname);
+			snprintf(buf, MAXLEN, "%s link set %s up; %s addif %s %s", IPCMD, actualname, BRIDGECMD, argv[i + 4], actualname);
 		if (debug)
 			printf(" run cmd: %s\n", buf);
 		system(buf);
