@@ -673,7 +673,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 {
 	u_int8_t *packet;
 	int i;
-	int VLANdot1Q = 0;
+//	int VLANdot1Q = 0;
 
 	if (len < 54)
 		return;
@@ -683,7 +683,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 	if ((packet[0] == 0x81) && (packet[1] == 0x00)) {	// skip 802.1Q tag 0x8100
 		packet += 4;
 		len -= 4;
-		VLANdot1Q = 1;
+//		VLANdot1Q = 1;
 	}
 	if ((packet[0] == 0x08) && (packet[1] == 0x00)) {	// IPv4 packet 0x0800
 		packet += 2;
