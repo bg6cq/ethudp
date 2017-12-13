@@ -31,7 +31,7 @@ Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tm
 
 ## 系统安装
 
-两台Linux机器为CentOS 6 最小安装，执行以下命令安装EthUDP软件：
+两台Linux机器为CentOS 6 最小安装(网卡不需要设置IP地址)，执行以下命令安装EthUDP软件：
 ```
 yum install epel-release 
 yum install gcc git lz4-devel openssl-devel tcpdump ntpdate telnet traceroute
@@ -82,10 +82,10 @@ OPT="-k 123456 -enc aes-128 -p password"
 
 ## 配置说明
 
-以上设置，站点A和站点B间的Linux机器使用UDP 6000和6001端口通信，站点B的Linux通过NAT连接站点A的Linux。
+以上设置的含义是：
 
-通信时使用AES-128加密。
-
-站点A的视频会议终端能直接与站点B的视频会议终端通信，就像两者直连一样。
-
-站点A/站点B的Linux可以使用172.16.10.1/172.16.10.2互相通信。
+* 站点A和站点B间的Linux机器使用UDP 6000和6001端口通信
+* 站点B的Linux通过NAT连接站点A的Linux
+* 通信时使用AES-128加密
+* 站点A/站点B的视频会议终端能直接通信，就像两者直连一样
+* 站点A/站点B的Linux可以使用172.16.10.1/172.16.10.2互相通信
