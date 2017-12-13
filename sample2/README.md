@@ -2,7 +2,7 @@
 # 通过互联网桥接2个以太网段
 
 开通视频会议时，如果某一方的视频会议终端在内网，对外经过了NAT或防火墙设备连接互联网，
-另一方终端在互联网，这种情况经常会出现某个方向的音频或视频无法传送的问题。
+另一方终端在互联网上，这种情况经常会出现某个方向的音频或视频无法传送的问题。
 
 解决问题的最简单方法是把两方的内部以太网通过互联网直接桥接，让两边的设备直通即可。
 
@@ -12,23 +12,25 @@
 
 站点A有公网IP，IP地址是202.110.92.27/29，网关是202.110.92.25。
 
-站点B经过NAT连接互联网，内部IP地址是192.168.10.2/24，网关是192.168.10.1。
+站点B经过NAT连接互联网，IP地址是192.168.10.2/24(内网)，网关是192.168.10.1。
 
-站点A和站点B各有一台视频会议设备，站点A的视频会议终端IP是 10.10.10.1/24，站点B的视频会议终端IP是
-10.10.10.2/24。此外，站点A和站点B各设立一台Linux机器提供隧道连接，拓扑图如下：
+站点A和站点B各有一台视频会议设备，站点A的视频会议终端IP是 10.10.10.1/24，
+站点B的视频会议终端IP是10.10.10.2/24。
+
+为了将站点A和站点B的以太网互联，在站点A和站点B各增加一台Linux机器提供隧道连接，拓扑图如下：
 
 ![网络拓扑图](vcnet.png)
 
 ## 使用设备
 
-Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tmall.com/item.htm?id=553661921148)，该设备
-有2个Intel以太网卡，无风扇运行，外形如下：
+Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tmall.com/item.htm?id=553661921148)，
+该设备有2个Intel以太网卡，无风扇运行，外形如下：
 
 ![大唐X1L迷你电脑主机](x1l.jpg)
 
 ## 系统安装
 
-安装CentOS 6后，执行以下命令安装EthUDP软件：
+两台Linux机器为CentOS 6 最小安装，并执行以下命令安装EthUDP软件：
 ```
 yum install epel-release 
 yum install gcc git lz4-devel openssl-devel tcpdump ntpdate telnet traceroute
@@ -40,14 +42,14 @@ make
 
 ## 站点A Linux机器的设置：
 
-* 允许udp 6000、6001端口的通信
+1. 允许udp 6000、6001端口的通信
 
 ```
 iptables -I INPUT -j ACCEPT -p udp --dport 6000
 iptables -I INPUT -j ACCEPT -p udp --dport 6001
 service iptables save
 ```
-* 修改文件 `/etc/rc.d/rc.local`
+2. 修改文件 `/etc/rc.d/rc.local`
 
 ```
 ip link set eth0 up
@@ -62,7 +64,7 @@ ip route add 0/0 via 202.110.92.25
 
 ## 站点B Linux机器的设置：
 
-* 修改文件 `/etc/rc.d/rc.local`
+1. 修改文件 `/etc/rc.d/rc.local`
 
 ```
 ip link set eth0 up
