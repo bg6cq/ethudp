@@ -31,7 +31,7 @@ Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tm
 
 ## 系统安装
 
-两台Linux机器为CentOS 6 最小安装(网卡不需要设置IP地址)，执行以下命令安装EthUDP软件：
+两台Linux机器为CentOS 6 最小安装(eth0网卡分别设置各自IP地址和网关)，执行以下命令安装EthUDP软件：
 ```
 yum install epel-release 
 yum install gcc git lz4-devel openssl-devel tcpdump ntpdate telnet traceroute
@@ -53,11 +53,7 @@ service iptables save
 2. 修改文件 `/etc/rc.d/rc.local`
 
 ```
-ip link set eth0 up
 ip link set eth1 up
-
-ip addr add 202.110.92.27/29 dev eth0
-ip route add 0/0 via 202.110.92.25
 
 OPT="-k 123456 -enc aes-128 -p password"
 /usr/src/ethudp/EthUDP -e $OPT 222.110.92.27 6000 0.0.0.0 0 eth1
@@ -69,11 +65,7 @@ OPT="-k 123456 -enc aes-128 -p password"
 1. 修改文件 `/etc/rc.d/rc.local`
 
 ```
-ip link set eth0 up
 ip link set eth1 up
-
-ip addr add 192.168.10.2/24 dev eth0
-ip route add 0/0 via 192.168.10.1
 
 OPT="-k 123456 -enc aes-128 -p password"
 /usr/src/ethudp/EthUDP -e $OPT 192.168.10.2 6000 202.110.92.27 6000 eth1
