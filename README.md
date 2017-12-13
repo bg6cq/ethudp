@@ -6,6 +6,8 @@ Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP
 
 [Sample config](sample/README.md)
 
+[Cross Internet, connect your ethenets/通过互联网桥接2个以太网段](sample2/README.md)
+
 ## package needs to compile
 
 CentOS:
