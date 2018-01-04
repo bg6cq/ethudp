@@ -53,6 +53,7 @@ service iptables save
 2. 修改文件 `/etc/rc.d/rc.local`
 
 ```
+ethtool -K eth1 gro off
 ip link set eth1 up
 
 OPT="-k 123456 -enc aes-128 -p password"
@@ -65,6 +66,7 @@ OPT="-k 123456 -enc aes-128 -p password"
 1. 修改文件 `/etc/rc.d/rc.local`
 
 ```
+ethtool -K eth1 gro off
 ip link set eth1 up
 
 OPT="-k 123456 -enc aes-128 -p password"
