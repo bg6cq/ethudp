@@ -24,10 +24,14 @@
 
 ## 使用设备
 
-Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tmall.com/item.htm?id=553661921148)，
-该设备有2个Intel以太网卡，无风扇运行，外形如下：
+Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tmall.com/item.htm?id=553661921148) 或者
+[N10Plus多网口千兆迷你小主机](https://detail.tmall.com/item.htm?id=542409856806)
+X1L 有2个Intel以太网卡，无风扇运行，外形如下：
 
 ![大唐X1L迷你电脑主机](x1l.jpg)
+
+N10Plus有4个千兆接口，无风扇运行，外形如下：
+![N10Plus多网口千兆迷你小主机](n10plus.jpg)
 
 ## 系统安装
 
@@ -70,7 +74,7 @@ ethtool -K eth1 gro off
 ip link set eth1 up
 
 OPT="-k 123456 -enc aes-128 -p password"
-/usr/src/ethudp/EthUDP -e $OPT 192.168.10.2 6000 202.110.92.27 6000 eth1
+/usr/src/ethudp/EthUDP -e $OPT 192.168.10.2 6000 222.110.92.27 6000 eth1
 /usr/src/ethudp/EthUDP -i $OPT 192.168.10.2 6001 222.110.92.27 6001 172.16.10.2 24
 ````
 
