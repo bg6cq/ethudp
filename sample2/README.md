@@ -24,11 +24,8 @@
 
 ## 使用设备
 
-Linux机器，我们采购的是 [大唐X1L迷你电脑主机](https://detail.tmall.com/item.htm?id=553661921148) 或者
+Linux机器，我们采购的是
 [N10Plus多网口千兆迷你小主机](https://detail.tmall.com/item.htm?id=542409856806)
-X1L 有2个Intel以太网卡，无风扇运行，外形如下：
-
-![大唐X1L迷你电脑主机](x1l.jpg)
 
 N10Plus有4个千兆接口，无风扇运行，外形如下：
 
