@@ -2,9 +2,12 @@
 
 Ethernet over UDP sample
 
-[best hardware running EthUDP](https://detail.tmall.com/item.htm?id=553661921148)
+[N10Plus多网口千兆迷你小主机](https://detail.tmall.com/item.htm?id=542409856806)
 
-![best hardward](x1l.jpg)
+N10Plus有4个千兆接口，无风扇运行，外形如下：
+
+![N10Plus多网口千兆迷你小主机](n10plus.jpg)
+
 
 ![sample network](sample.png)
 
