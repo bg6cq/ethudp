@@ -1647,7 +1647,7 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			mtu = atoi(argv[i]);
-			if ((mtu <= 1028) || (mtu > 1500)) {
+			if ((mtu < 1028) || (mtu > 1500)) {
 				printf("invalid mtu %d\n", mtu);
 				usage();
 			}
