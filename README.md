@@ -190,3 +190,9 @@ vlanmap.txt
 10 30
 40 100
 ````
+9. support UDP packet fragment
+
+```
+./EthUDP ... -mtu 1500
+```
+split UDP packet lenght exceed 1500 bytes to two UDP packets
