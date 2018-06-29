@@ -1373,6 +1373,13 @@ void process_udp_to_raw(int index)
 			}
 			if (len <= 0)
 				continue;
+
+			if ((mtu > 0) && (memcmp(buf, "UDPFRG", 6) == 0)) {
+				len = do_udp_frag_recv(buf, len);
+				if (len <= 0)	//  waiting the pair packet
+					continue;
+			}
+
 			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
