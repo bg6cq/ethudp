@@ -419,7 +419,7 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 	if (debug) {
 		socklen_t ln;
 		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0) {
-			Debug("RAW socket RCVBUF setting to %d\n", n);
+			Debug("RAW socket RCVBUF setting to %d", n);
 		}
 	}
 
@@ -894,7 +894,7 @@ void send_frag_udp(u_int8_t * buf, int len, int index)
 	newbuf[6] = (udp_frg_seq >> 8) & 0xff;
 	newbuf[7] = udp_frg_seq & 0xff;
 	memcpy(newbuf + 8, buf, 1000);
-	Debug("send frag %d, len=1000, total_len=%d\n", udp_frg_seq, len);
+	Debug("send frag %d, len=1000, total_len=%d", udp_frg_seq, len);
 	send_udp_to_remote(newbuf, 1008, index);
 	udp_frg_seq++;
 	if (udp_frg_seq >= MAXPKTS)
@@ -902,7 +902,7 @@ void send_frag_udp(u_int8_t * buf, int len, int index)
 	newbuf[6] = (udp_frg_seq >> 8) & 0xff;
 	newbuf[7] = udp_frg_seq & 0xff;
 	memcpy(newbuf + 8, buf + 1000, len - 1000);
-	Debug("send frag %d, len=%d, total_len=%d\n", udp_frg_seq, len - 1000, len);
+	Debug("send frag %d, len=%d, total_len=%d", udp_frg_seq, len - 1000, len);
 	send_udp_to_remote(newbuf, 8 + len - 1000, index);
 	udp_frg_seq++;
 	if (udp_frg_seq >= MAXPKTS)
@@ -1254,7 +1254,7 @@ void add_to_udp_frag_buf(time_t rcvt, int seq, unsigned char *buf, int len)
 	memcpy(packet_bufs[seq].buf, buf, len);
 	packet_bufs[seq].len = len;
 	packet_bufs[seq].rcvt = rcvt;
-	Debug("udp_frag seq %d, len=%d stored\n", seq, len);
+	Debug("udp_frag seq %d, len=%d stored", seq, len);
 }
 
 int do_udp_frag_recv(unsigned char *buf, int len)
@@ -1262,7 +1262,7 @@ int do_udp_frag_recv(unsigned char *buf, int len)
 	time_t tm = time(NULL);
 	int seq = (buf[6] << 8) + buf[7];
 	int pair_seq = (seq & 0xfffe) + ((seq & 1) ^ 1);
-	Debug("Got udp_frag seq %d, len=%d\n", seq, len - 8);
+	Debug("Got udp_frag seq %d, len=%d", seq, len - 8);
 	if ((len > 1008) || (len < 8)) {
 		Debug("len=%d is invalid, drop it\n", len);
 		return 0;
@@ -1289,7 +1289,7 @@ int do_udp_frag_recv(unsigned char *buf, int len)
 	packet_bufs[pair_seq].len = 0;
 	free(packet_bufs[pair_seq].buf);
 	packet_bufs[pair_seq].buf = NULL;
-	Debug("udp_frag new pkt len %d\n", len);
+	Debug("udp_frag new pkt len %d", len);
 	return len;
 }
 
