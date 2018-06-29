@@ -1549,7 +1549,7 @@ void usage(void)
 	printf("    -k key_string\n");
 	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
 	printf("    -mss mss         change tcp SYN mss\n");
-	printf("    -mtu mtu         fragment udp to mtu - 28 bytes packets, 1028 - 1500\n");
+	printf("    -mtu mtu         fragment udp to mtu - 28 bytes packets, 1036 - 1500\n");
 	printf("    -map vlanmap.txt vlan maping\n");
 	printf("    -dev dev_name    rename tap interface to dev_name(mode i & b)\n");
 	printf("    -n name          name for syslog prefix\n");
@@ -1647,7 +1647,7 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			mtu = atoi(argv[i]);
-			if ((mtu < 1028) || (mtu > 1500)) {
+			if ((mtu < 1036) || (mtu > 1500)) {
 				printf("invalid mtu %d\n", mtu);
 				usage();
 			}
