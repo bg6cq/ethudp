@@ -91,10 +91,22 @@ struct _EtherHeader {
 
 typedef struct _EtherHeader EtherPacket;
 
+struct packet_buf {
+	time_t rcvt;		// recv time, or 0 not valid, if packet header is 8 bytes, "UDPFRG"+seq
+	int len;		// buf len
+	unsigned char *buf;
+};
+
+#define MAXPKTS 65536
+
+struct packet_buf packet_bufs[MAXPKTS];	// buf[0] & buf[1] is pair, store the orignal big UDP packets
+
 int daemon_proc;		/* set nonzero by daemon_init() */
 int debug = 0;
 
 int mode = -1;			// 0 eth bridge, 1 interface, 2 bridge
+int mtu = 0;
+int udp_frg_seq = 0;
 int master_slave = 0;
 int read_only = 0, write_only = 0;
 int fixmss = 0;
@@ -869,8 +881,38 @@ int do_loopback_check(u_int8_t * buf, int len)
 	return 0;
 }
 
+void send_udp_to_remote(u_int8_t * buf, int len, int index);
+
+void send_frag_udp(u_int8_t * buf, int len, int index)
+{
+	unsigned char newbuf[MAX_PACKET_SIZE];
+	if (len >= 2000)	// should not go here
+		return;
+	if (len <= 1000)	// should not go here
+		return;
+	memcpy(newbuf, "UDPFRG", 6);
+	newbuf[6] = (udp_frg_seq >> 8) & 0xff;
+	newbuf[7] = udp_frg_seq & 0xff;
+	memcpy(newbuf + 8, buf, 1000);
+	Debug("send frag %d, len=1000, total_len=%d\n", udp_frg_seq, len);
+	send_udp_to_remote(newbuf, 1008, index);
+	udp_frg_seq++;
+	if (udp_frg_seq >= MAXPKTS)
+		udp_frg_seq = 0;
+	newbuf[6] = (udp_frg_seq >> 8) & 0xff;
+	newbuf[7] = udp_frg_seq & 0xff;
+	memcpy(newbuf + 8, buf + 1000, len - 1000);
+	Debug("send frag %d, len=%d, total_len=%d\n", udp_frg_seq, len - 1000, len);
+	send_udp_to_remote(newbuf, 8 + len - 1000, index);
+	udp_frg_seq++;
+	if (udp_frg_seq >= MAXPKTS)
+		udp_frg_seq = 0;
+}
+
 void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet to remote 
 {
+	if ((mtu > 0) && (len > mtu - 28))
+		return send_frag_udp(buf, len, index);
 	if (nat[index]) {
 		char rip[200];
 		if (remote_addr[index].ss_family == AF_INET) {
@@ -1199,6 +1241,58 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 	}
 }
 
+void add_to_udp_frag_buf(time_t rcvt, int seq, unsigned char *buf, int len)
+{
+	if (packet_bufs[seq].rcvt > 0)	// del old packet
+		free(packet_bufs[seq].buf);
+	packet_bufs[seq].buf = malloc(len);
+	if (packet_bufs[seq].buf == NULL) {
+		Debug("malloc error\n");
+		packet_bufs[seq].rcvt = 0;
+		return;
+	}
+	memcpy(packet_bufs[seq].buf, buf, len);
+	packet_bufs[seq].len = len;
+	packet_bufs[seq].rcvt = rcvt;
+	Debug("udp_frag seq %d, len=%d stored\n", seq, len);
+}
+
+int do_udp_frag_recv(unsigned char *buf, int len)
+{
+	time_t tm = time(NULL);
+	int seq = (buf[6] << 8) + buf[7];
+	int pair_seq = (seq & 0xfffe) + ((seq & 1) ^ 1);
+	Debug("Got udp_frag seq %d, len=%d\n", seq, len - 8);
+	if ((len > 1008) || (len < 8)) {
+		Debug("len=%d is invalid, drop it\n", len);
+		return 0;
+	}
+	if (packet_bufs[pair_seq].rcvt == 0) {	// pair not in buf, store in buf
+		add_to_udp_frag_buf(tm, seq, buf + 8, len - 8);
+		return 0;
+	}
+
+	if (tm - packet_bufs[pair_seq].rcvt > 1) {	// pair time is too long(>1s), invalid, store in buf
+		add_to_udp_frag_buf(tm, seq, buf + 8, len - 8);
+		return 0;
+	}
+
+	if ((seq & 1) == 0) {	// this is the first packet
+		memmove(buf, buf + 8, len - 8);
+		memcpy(buf + len - 8, packet_bufs[pair_seq].buf, packet_bufs[pair_seq].len);
+	} else {
+		memmove(buf + packet_bufs[pair_seq].len, buf + 8, len - 8);
+		memcpy(buf, packet_bufs[pair_seq].buf, packet_bufs[pair_seq].len);
+	}
+	len = len - 8 + packet_bufs[pair_seq].len;
+	packet_bufs[pair_seq].rcvt = 0;
+	packet_bufs[pair_seq].len = 0;
+	free(packet_bufs[pair_seq].buf);
+	packet_bufs[pair_seq].buf = NULL;
+	Debug("udp_frag new pkt len %d\n", len);
+	return len;
+}
+
 void process_udp_to_raw(int index)
 {
 	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
@@ -1225,10 +1319,18 @@ void process_udp_to_raw(int index)
 			}
 			if (len <= 0)
 				continue;
+
 			if (len >= MAX_PACKET_SIZE) {
 				err_msg("recv long pkt from udp, len=%d", len);
 				len = MAX_PACKET_SIZE;
 			}
+
+			if ((mtu > 0) && (memcmp(buf, "UDPFRG", 6) == 0)) {
+				len = do_udp_frag_recv(buf, len);
+				if (len <= 0)	//  waiting the pair packet
+					continue;
+			}
+
 			if ((enc_key_len > 0) || (lz4 > 0)) {
 				len = do_decrypt((u_int8_t *) buf, len, nbuf);
 				pbuf = nbuf;
@@ -1447,6 +1549,7 @@ void usage(void)
 	printf("    -k key_string\n");
 	printf("    -lz4 [ 0-9 ]     lz4 acceleration, default is 0(disable), 1 is best, 9 is fast\n");
 	printf("    -mss mss         change tcp SYN mss\n");
+	printf("    -mtu mtu         fragment udp to mtu - 28 bytes packets, 1028 - 1500\n");
 	printf("    -map vlanmap.txt vlan maping\n");
 	printf("    -dev dev_name    rename tap interface to dev_name(mode i & b)\n");
 	printf("    -n name          name for syslog prefix\n");
@@ -1539,6 +1642,15 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			fixmss = atoi(argv[i]);
+		} else if (strcmp(argv[i], "-mtu") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			mtu = atoi(argv[i]);
+			if ((mtu <= 1028) || (mtu > 1500)) {
+				printf("invalid mtu %d\n", mtu);
+				usage();
+			}
 		} else if (strcmp(argv[i], "-map") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1630,6 +1742,7 @@ int main(int argc, char *argv[])
 		printf("       key_len = %d\n", enc_key_len);
 		printf("  master_slave = %d\n", master_slave);
 		printf("           mss = %d\n", fixmss);
+		printf("           mtu = %d\n", mtu);
 		printf("     read_only = %d\n", read_only);
 		printf("loopback_check = %d\n", loopback_check);
 		printf("    write_only = %d\n", write_only);
