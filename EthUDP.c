@@ -92,9 +92,9 @@ struct _EtherHeader {
 typedef struct _EtherHeader EtherPacket;
 
 struct packet_buf {
-	time_t rcvt;		// recv time, or 0 not valid, if packet header is 8 bytes, "UDPFRG"+seq
+	time_t rcvt;		// recv time, 0 if not valid
 	int len;		// buf len
-	unsigned char *buf;
+	unsigned char *buf;	// packet header is 8 bytes: UDPFRG+seq
 };
 
 #define MAXPKTS 65536
@@ -204,7 +204,7 @@ void err_msg(const char *fmt, ...)
 	return;
 }
 
-void Debug(const char *fmt, ...)
+void inline Debug(const char *fmt, ...)
 {
 	va_list ap;
 	if (debug) {
@@ -303,6 +303,14 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 
 	sockfd = udp_server(lhost, lserv, NULL, index);
 
+	n = 10 * 1024 * 1024;
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
+	if (debug) {
+		socklen_t ln;
+		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0)
+			Debug("UDP socket RCVBUF setting to %d\n", n);
+	}
+
 	bzero(&hints, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
@@ -312,30 +320,27 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 	ressave = res;
 
 	do {
-		int len;
 		void *raddr;
 		if (res->ai_family == AF_INET) {	// IPv4
 			struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
 			raddr = &(ipv4->sin_addr);
-			len = 4;
+			if ((memcmp(raddr, "\0\0\0\0", 4) == 0) || (ipv4->sin_port == 0)) {
+				Debug("nat = 1");
+				nat[index] = 1;
+				memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
+				freeaddrinfo(ressave);
+				return sockfd;
+			}
 		} else {	// IPv6
 			struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)res->ai_addr;
 			raddr = &(ipv6->sin6_addr);
-			len = 16;
-		}
-
-		if (memcmp(raddr, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", len) == 0) {
-			Debug("remote_addr == 0, nat = 1");
-			nat[index] = 1;
-			memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
-			return sockfd;
-		}
-
-		if (((struct sockaddr_in *)res->ai_addr)->sin_port == 0) {
-			Debug("port==0, nat = 1");
-			nat[index] = 1;
-			memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
-			return sockfd;
+			if ((memcmp(raddr, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16) == 0) || (ipv6->sin6_port == 0)) {
+				Debug("nat = 1");
+				nat[index] = 1;
+				memcpy((void *)&(cmd_remote_addr[index]), res->ai_addr, res->ai_addrlen);
+				freeaddrinfo(ressave);
+				return sockfd;
+			}
 		}
 
 		if (connect(sockfd, res->ai_addr, res->ai_addrlen) == 0) {
@@ -350,14 +355,6 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 		err_sys("udp_xconnect error for %s, %s", rhost, rserv);
 
 	freeaddrinfo(ressave);
-
-	n = 40 * 1024 * 1024;
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
-	if (debug) {
-		socklen_t ln;
-		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0)
-			Debug("UDP socket RCVBUF setting to %d\n", n);
-	}
 
 	return (sockfd);
 }
@@ -405,7 +402,7 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 	 * raw-socket receives packets from all interfaces
 	 * when the socket is not bound to an interface
 	 */
-	int32_t i;
+	int32_t i, l = 0;
 	do {
 		fd_set fds;
 		struct timeval t;
@@ -415,11 +412,11 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 		i = select(FD_SETSIZE, &fds, NULL, NULL, &t);
 		if (i > 0) {
 			recv(fd, buf, i, 0);
+			l++;
 		};
-
-		Debug("interface %d flushed", ifindex);
+		Debug("interface %d flushed %d packets", ifindex, l);
 	}
-	while (i);
+	while (i > 0);
 
 	/* Enable auxillary data if supported and reserve room for
 	 * reconstructing VLAN headers. */
@@ -432,7 +429,7 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 
 	Debug("%s opened (fd=%d interface=%d)", ifname, fd, ifindex);
 
-	n = 40 * 1024 * 1024;
+	n = 10 * 1024 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
 	if (debug) {
 		socklen_t ln;
@@ -516,7 +513,8 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 			err_msg("lz4 compress error");
 			return 0;
 		}
-		Debug("compress %d-->%d save %d byte", len, nlen, len - nlen);
+		if (debug)
+			Debug("compress %d-->%d save %d byte", len, nlen, len - nlen);
 		if (nlen < len) {	// compressed 
 			lzbuf[nlen] = 0xff;	// 0xff means compressed data
 			nlen++;
@@ -527,7 +525,8 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 			buf[len] = 0xaa;	// 0xaa means not compressed data
 			compress_overhead++;
 			len++;
-			Debug("not compressed %d", len);
+			if (debug)
+				Debug("not compressed %d", len);
 		}
 	}
 	if (enc_key_len <= 0) {
@@ -544,7 +543,8 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 #endif
 	else
 		return 0;
-	Debug("encrypt_overhead %d", nlen - len);
+	if (debug)
+		Debug("encrypt_overhead %d", nlen - len);
 	encrypt_overhead += nlen - len;
 	return nlen;
 }
@@ -569,7 +569,8 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 	if ((lz4 > 0) && (len > 0)) {
 		len--;
 		if (buf[len] == 0xaa) {	// not compressed data
-			Debug("decompress not compressed data %d", len);
+			if (debug)
+				Debug("decompress not compressed data %d", len);
 			memcpy(nbuf, buf, len);
 		} else if (buf[len] == 0xff) {	// compressed data
 			int nlen;
@@ -578,7 +579,8 @@ int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 				err_msg("lz4 decompress error");
 				return 0;
 			}
-			Debug("decompress %d-->%d", len, nlen);
+			if (debug)
+				Debug("decompress %d-->%d", len, nlen);
 			len = nlen;
 		} else {
 			err_msg("len %d last byte error 0x%02X", len, buf[len]);
@@ -703,7 +705,6 @@ void fix_mss(u_int8_t * buf, int len, int index)
 {
 	u_int8_t *packet;
 	int i;
-//      int VLANdot1Q = 0;
 
 	if (len < 54)
 		return;
@@ -713,7 +714,6 @@ void fix_mss(u_int8_t * buf, int len, int index)
 	if ((packet[0] == 0x81) && (packet[1] == 0x00)) {	// skip 802.1Q tag 0x8100
 		packet += 4;
 		len -= 4;
-//              VLANdot1Q = 1;
 	}
 	if ((packet[0] == 0x08) && (packet[1] == 0x00)) {	// IPv4 packet 0x0800
 		packet += 2;
@@ -733,21 +733,14 @@ void fix_mss(u_int8_t * buf, int len, int index)
 		if (!tcph->syn)
 			return;
 
-		Debug("fixmss ipv4 tcp syn");
+		if (debug)
+			Debug("fixmss ipv4 tcp syn");
 
 		u_int8_t *opt = (u_int8_t *) tcph;
 		for (i = sizeof(struct tcphdr); i < tcph->doff * 4; i += optlen(opt, i)) {
 			if (opt[i] == 2 && tcph->doff * 4 - i >= 4 &&	// TCP_MSS
 			    opt[i + 1] == 4) {
 				u_int16_t newmss = fixmss, oldmss;
-/*
-				if (local_addr[index].ss_family == PF_INET)
-					newmss = 1418;
-				else if (local_addr[index].ss_family == PF_INET6)
-					newmss = 1398;
-				if (VLANdot1Q)
-					newmss -= 4;
-*/
 				oldmss = (opt[i + 2] << 8) | opt[i + 3];
 				/* Never increase MSS, even when setting it, as
 				 * doing so results in problems for hosts that rely
@@ -755,7 +748,8 @@ void fix_mss(u_int8_t * buf, int len, int index)
 				 */
 				if (oldmss <= newmss)
 					return;
-				Debug("change inner v4 tcp mss from %d to %d", oldmss, newmss);
+				if (debug)
+					Debug("change inner v4 tcp mss from %d to %d", oldmss, newmss);
 				opt[i + 2] = (newmss & 0xff00) >> 8;
 				opt[i + 3] = newmss & 0x00ff;
 
@@ -781,20 +775,13 @@ void fix_mss(u_int8_t * buf, int len, int index)
 		struct tcphdr *tcph = (struct tcphdr *)(packet + 40);
 		if (!tcph->syn)
 			return;
-		Debug("fixmss ipv6 tcp syn");
+		if (debug)
+			Debug("fixmss ipv6 tcp syn");
 		u_int8_t *opt = (u_int8_t *) tcph;
 		for (i = sizeof(struct tcphdr); i < tcph->doff * 4; i += optlen(opt, i)) {
 			if (opt[i] == 2 && tcph->doff * 4 - i >= 4 &&	// TCP_MSS
 			    opt[i + 1] == 4) {
 				u_int16_t newmss = fixmss, oldmss;
-/*
-				if (local_addr[index].ss_family == PF_INET)
-					newmss = 1398;
-				else if (local_addr[index].ss_family == PF_INET6)
-					newmss = 1378;
-				if (VLANdot1Q)
-					newmss -= 4;
-*/
 				oldmss = (opt[i + 2] << 8) | opt[i + 3];
 				/* Never increase MSS, even when setting it, as
 				 * doing so results in problems for hosts that rely
@@ -802,7 +789,8 @@ void fix_mss(u_int8_t * buf, int len, int index)
 				 */
 				if (oldmss <= newmss)
 					return;
-				Debug("change inner v6 tcp mss from %d to %d", oldmss, newmss);
+				if (debug)
+					Debug("change inner v6 tcp mss from %d to %d", oldmss, newmss);
 
 				opt[i + 2] = (newmss & 0xff00) >> 8;
 				opt[i + 3] = newmss & 0x00ff;
@@ -848,19 +836,23 @@ int do_loopback_check(u_int8_t * buf, int len)
 
 		struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[MASTER]);
 		if (ip->saddr == r->sin_addr.s_addr) {
-			Debug("master remote ipaddr == src addr, loopback");
+			if (debug)
+				Debug("master remote ipaddr == src addr, loopback");
 			return 1;
 		} else if (ip->daddr == r->sin_addr.s_addr) {
-			Debug("master remote ipaddr == dst addr, loopback");
+			if (debug)
+				Debug("master remote ipaddr == dst addr, loopback");
 			return 1;
 		}
 		if (master_slave) {
-			struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[SLAVE]);
+			r = (struct sockaddr_in *)(&remote_addr[SLAVE]);
 			if (ip->saddr == r->sin_addr.s_addr) {
-				Debug("slave remote ipaddr == src addr, loopback");
+				if (debug)
+					Debug("slave remote ipaddr == src addr, loopback");
 				return 1;
 			} else if (ip->daddr == r->sin_addr.s_addr) {
-				Debug("slave remote ipaddr == dst addr, loopback");
+				if (debug)
+					Debug("slave remote ipaddr == dst addr, loopback");
 				return 1;
 			}
 		}
@@ -879,19 +871,23 @@ int do_loopback_check(u_int8_t * buf, int len)
 
 		struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[MASTER];
 		if (memcmp(&ip6->ip6_src, &r->sin6_addr, 16) == 0) {
-			Debug("master remote ip6_addr == src ip6 addr, loopback");
+			if (debug)
+				Debug("master remote ip6_addr == src ip6 addr, loopback");
 			return 1;
 		} else if (memcmp(&ip6->ip6_dst, &r->sin6_addr, 16) == 0) {
-			Debug("master remote ip6_addr == dst ip6 addr, loopback");
+			if (debug)
+				Debug("master remote ip6_addr == dst ip6 addr, loopback");
 			return 1;
 		}
 		if (master_slave) {
-			struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[SLAVE];
+			r = (struct sockaddr_in6 *)&remote_addr[SLAVE];
 			if (memcmp(&ip6->ip6_src, &r->sin6_addr, 16) == 0) {
-				Debug("slave remote ip6_addr == src ip6 addr, loopback");
+				if (debug)
+					Debug("slave remote ip6_addr == src ip6 addr, loopback");
 				return 1;
 			} else if (memcmp(&ip6->ip6_dst, &r->sin6_addr, 16) == 0) {
-				Debug("slave remote ip6_addr == dst ip6 addr, loopback");
+				if (debug)
+					Debug("slave remote ip6_addr == dst ip6 addr, loopback");
 				return 1;
 			}
 		}
@@ -912,7 +908,8 @@ void send_frag_udp(u_int8_t * buf, int len, int index)
 	newbuf[6] = (udp_frg_seq >> 8) & 0xff;
 	newbuf[7] = udp_frg_seq & 0xff;
 	memcpy(newbuf + 8, buf, 1000);
-	Debug("send frag %d, len=1000, total_len=%d", udp_frg_seq, len);
+	if (debug)
+		Debug("send frag %d, len=1000, total_len=%d", udp_frg_seq, len);
 	send_udp_to_remote(newbuf, 1008, index);
 	udp_frg_seq++;
 	if (udp_frg_seq >= MAXPKTS)
@@ -920,7 +917,8 @@ void send_frag_udp(u_int8_t * buf, int len, int index)
 	newbuf[6] = (udp_frg_seq >> 8) & 0xff;
 	newbuf[7] = udp_frg_seq & 0xff;
 	memcpy(newbuf + 8, buf + 1000, len - 1000);
-	Debug("send frag %d, len=%d, total_len=%d", udp_frg_seq, len - 1000, len);
+	if (debug)
+		Debug("send frag %d, len=%d, total_len=%d", udp_frg_seq, len - 1000, len);
 	send_udp_to_remote(newbuf, 8 + len - 1000, index);
 	udp_frg_seq++;
 	if (udp_frg_seq >= MAXPKTS)
@@ -935,7 +933,8 @@ void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet t
 		char rip[200];
 		if (remote_addr[index].ss_family == AF_INET) {
 			struct sockaddr_in *r = (struct sockaddr_in *)(&remote_addr[index]);
-			Debug("nat mode: send len %d to %s:%d", len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
+			if (debug)
+				Debug("nat mode: send len %d to %s:%d", len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
 			if (r->sin_port) {
 				sendto(fdudp[index], buf, len, 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
 				udp_send_pkt[index]++;
@@ -943,7 +942,8 @@ void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet t
 			}
 		} else if (remote_addr[index].ss_family == AF_INET6) {
 			struct sockaddr_in6 *r = (struct sockaddr_in6 *)&remote_addr[index];
-			Debug("nat mode: send len %d to [%s]:%d", len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
+			if (debug)
+				Debug("nat mode: send len %d to [%s]:%d", len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 			if (r->sin6_port) {
 				sendto(fdudp[index], buf, len, 0, (struct sockaddr *)&remote_addr[index], sizeof(struct sockaddr_storage));
 				udp_send_pkt[index]++;
@@ -1034,17 +1034,17 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 		}
 		myticket++;
 		if (mypassword[0]) {
-			if (nat[MASTER] == 0) {
-				len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
+			len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
+			if (debug)
 				Debug("send password: %s", buf);
-				len++;
-				if ((enc_key_len > 0) || (lz4 > 0)) {
-					len = do_encrypt((u_int8_t *) buf, len, nbuf);
-					pbuf = nbuf;
-				} else
-					pbuf = buf;
+			len++;
+			if ((enc_key_len > 0) || (lz4 > 0)) {
+				len = do_encrypt((u_int8_t *) buf, len, nbuf);
+				pbuf = nbuf;
+			} else
+				pbuf = buf;
+			if (nat[MASTER] == 0)
 				send_udp_to_remote(pbuf, len, MASTER);	// send to master
-			}
 			if (master_slave && (nat[SLAVE] == 0))
 				send_udp_to_remote(pbuf, len, SLAVE);	// send to slave
 		}
@@ -1148,12 +1148,14 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 #endif
 					continue;
 
-				Debug("len=%d, iov_len=%d, ", len, (int)iov.iov_len);
+				if (debug)
+					Debug("len=%d, iov_len=%d, ", len, (int)iov.iov_len);
 
 				len = len > iov.iov_len ? iov.iov_len : len;
 				if (len < 12)	// MAC_len * 2
 					break;
-				Debug("len=%d", len);
+				if (debug)
+					Debug("len=%d", len);
 
 				memmove(buf, buf + VLAN_TAG_LEN, 12);
 				offset = 0;
@@ -1162,7 +1164,8 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				 * Now insert the tag.
 				 */
 				tag = (struct vlan_tag *)(buf + 12);
-				Debug("insert vlan id, recv len=%d", len);
+				if (debug)
+					Debug("insert vlan id, recv len=%d", len);
 
 #ifdef TP_STATUS_VLAN_TPID_VALID
 				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? aux->tp_vlan_tpid : 0x0081);
@@ -1214,7 +1217,8 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				if (my_vlan[vlan] != vlan) {
 					tag->vlan_tci = htons((ntohs(tag->vlan_tci) & 0xf000) + my_vlan[vlan]);
 					if (debug) {
-						Debug("maping vlan %d to %d", vlan, my_vlan[vlan]);
+						if (debug)
+							Debug("maping vlan %d to %d", vlan, my_vlan[vlan]);
 						printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 					}
 				}
@@ -1274,7 +1278,8 @@ void add_to_udp_frag_buf(time_t rcvt, int seq, unsigned char *buf, int len)
 	memcpy(packet_bufs[seq].buf, buf, len);
 	packet_bufs[seq].len = len;
 	packet_bufs[seq].rcvt = rcvt;
-	Debug("udp_frag seq %d, len=%d stored", seq, len);
+	if (debug)
+		Debug("udp_frag seq %d, len=%d stored", seq, len);
 }
 
 int do_udp_frag_recv(unsigned char *buf, int len)
@@ -1282,9 +1287,11 @@ int do_udp_frag_recv(unsigned char *buf, int len)
 	time_t tm = time(NULL);
 	int seq = (buf[6] << 8) + buf[7];
 	int pair_seq = (seq & 0xfffe) + ((seq & 1) ^ 1);
-	Debug("Got udp_frag seq %d, len=%d", seq, len - 8);
+	if (debug)
+		Debug("Got udp_frag seq %d, len=%d", seq, len - 8);
 	if ((len > 1008) || (len < 8)) {
-		Debug("len=%d is invalid, drop it\n", len);
+		if (debug)
+			Debug("len=%d is invalid, drop it\n", len);
 		return 0;
 	}
 	if (packet_bufs[pair_seq].rcvt == 0) {	// pair not in buf, store in buf
@@ -1309,7 +1316,8 @@ int do_udp_frag_recv(unsigned char *buf, int len)
 	packet_bufs[pair_seq].len = 0;
 	free(packet_bufs[pair_seq].buf);
 	packet_bufs[pair_seq].buf = NULL;
-	Debug("udp_frag new pkt len %d", len);
+	if (debug)
+		Debug("udp_frag new pkt len %d", len);
 	return len;
 }
 
@@ -1329,12 +1337,14 @@ void process_udp_to_raw(int index)
 				char rip[200];
 				if (rmt.ss_family == AF_INET) {
 					struct sockaddr_in *r = (struct sockaddr_in *)&rmt;
-					Debug("nat mode: len %d recv from %s:%d",
-					      len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
+					if (debug)
+						Debug("nat mode: len %d recv from %s:%d",
+						      len, inet_ntop(r->sin_family, (void *)&r->sin_addr, rip, 200), ntohs(r->sin_port));
 				} else if (rmt.ss_family == AF_INET6) {
 					struct sockaddr_in6 *r = (struct sockaddr_in6 *)&rmt;
-					Debug("nat mode: len %d recv from [%s]:%d",
-					      len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
+					if (debug)
+						Debug("nat mode: len %d recv from [%s]:%d",
+						      len, inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 				}
 			}
 			if (len <= 0)
@@ -1364,24 +1374,28 @@ void process_udp_to_raw(int index)
 			udp_recv_byte[index] += len;
 			nbuf[len] = 0;
 			if (mypassword[0] == 0) {	// no password set, accept new ip and port
-				Debug("no password, accept new remote ip and port");
+				if (debug)
+					Debug("no password, accept new remote ip and port");
 				save_remote_addr(&rmt, sock_len, index);
 				if (memcmp(pbuf, "PASSWORD:", 9) == 0)	// got password packet, skip this packet
 					continue;
 			} else {
 				if (memcmp(pbuf, "PASSWORD:", 9) == 0) {	// got password packet
-					Debug("password packet from remote %s", pbuf);
+					if (debug)
+						Debug("password packet from remote %s", pbuf);
 					if ((memcmp(pbuf + 9, mypassword, strlen(mypassword)) == 0)
 					    && (*(pbuf + 9 + strlen(mypassword))
 						== 0)) {
-						Debug("password ok");
+						if (debug)
+							Debug("password ok");
 						save_remote_addr(&rmt, sock_len, index);
 					} else if (debug)
 						printf("error\n");
 					continue;
 				}
 				if (memcmp((void *)&remote_addr[index], &rmt, sock_len)) {
-					Debug("packet from unknow host, drop...");
+					if (debug)
+						Debug("packet from unknow host, drop...");
 					continue;
 				}
 			}
@@ -1519,7 +1533,7 @@ int open_tun(const char *dev, char **actual)
 	*actual = (char *)malloc(size);
 	memcpy(*actual, ifr.ifr_name, size);
 	// the following maybe no use
-	int n = 40 * 1024 * 1024;
+	int n = 10 * 1024 * 1024;
 	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
 	if (debug) {
 		socklen_t ln = sizeof(n);
