@@ -1005,8 +1005,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
 
-			err_msg("============= myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d, loopback_check=%d", (unsigned long)myticket,
-				master_slave, master_status, slave_status, loopback_check);
+			err_msg("============= version: %s myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d, loopback_check=%d", VERSION,
+				(unsigned long)myticket, master_slave, master_status, slave_status, loopback_check);
 			print_addrinfo(MASTER);
 			if (master_slave)
 				print_addrinfo(SLAVE);
@@ -1577,6 +1577,7 @@ void read_vlan_map_file(char *fname)
 
 void usage(void)
 {
+	printf("EthUDP version: %s\n", VERSION);
 	printf("Usage:\n");
 	printf("./EthUDP -e [ options ] localip localport remoteip remoteport eth? \\\n");
 	printf("            [ localip localport remoteip remoteport ]\n");
