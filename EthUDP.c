@@ -1005,7 +1005,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
 
-			err_msg("============= version: %s myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d, loopback_check=%d", VERSION,
+			err_msg("============= version: %s, myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d, loopback_check=%d", VERSION,
 				(unsigned long)myticket, master_slave, master_status, slave_status, loopback_check);
 			print_addrinfo(MASTER);
 			if (master_slave)
@@ -1577,7 +1577,7 @@ void read_vlan_map_file(char *fname)
 
 void usage(void)
 {
-	printf("EthUDP version: %s\n", VERSION);
+	printf("EthUDP Version: %s, by james@ustc.edu.cn (https://github.com/bg6cq/ethudp)\n", VERSION);
 	printf("Usage:\n");
 	printf("./EthUDP -e [ options ] localip localport remoteip remoteport eth? \\\n");
 	printf("            [ localip localport remoteip remoteport ]\n");
@@ -1604,6 +1604,8 @@ void usage(void)
 	printf("    -nopromisc    do not set ethernet interface to promisc mode(mode e)\n");
 	printf("    -noloopcheck  do not check loopback(-r default do check)\n");
 	printf("    -loopcheck    do check loopback\n");
+	printf(" HUP  signal: print statistics\n");
+	printf(" USR1 signal: reset statistics\n");
 	exit(0);
 }
 
