@@ -51,14 +51,14 @@
 #define MODEI	1		// tap interface mode
 #define MODEB	2		// bridge mode
 
-#define XOR 	1
-
 //#define DEBUGPINGPONG 1
 //#define DEBUGSSL      1
 
 // ip & brctl command
 #define IPCMD 		"/sbin/ip"
 #define BRIDGECMD	"/usr/sbin/brctl"
+
+#define XOR 	1
 
 #ifdef ENABLE_OPENSSL
 #include <openssl/evp.h>
