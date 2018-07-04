@@ -1,6 +1,6 @@
 # EthUDP
 
-Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP, support data encryption
+Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP, support data encryption, udp connection failover
 
 ## Sample config
 
