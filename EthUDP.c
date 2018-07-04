@@ -102,7 +102,7 @@ struct packet_buf {
 struct packet_buf packet_bufs[MAXPKTS];	// buf[0] & buf[1] is pair, store the orignal big UDP packets
 
 int daemon_proc;		/* set nonzero by daemon_init() */
-int debug = 0;
+volatile int debug = 0;
 
 int mode = -1;			// 0 eth bridge, 1 interface, 2 bridge
 int mtu = 0;
@@ -148,6 +148,7 @@ volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second afte
 volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
 volatile long long raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
 volatile long long udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
+volatile long long udp_send_err[2], raw_send_err;
 volatile int master_status = STATUS_OK;
 volatile int slave_status = STATUS_OK;
 volatile int current_remote = MASTER;
@@ -204,7 +205,7 @@ void err_msg(const char *fmt, ...)
 	return;
 }
 
-void inline Debug(const char *fmt, ...)
+void Debug(const char *fmt, ...)
 {
 	va_list ap;
 	if (debug) {
@@ -951,9 +952,12 @@ void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet t
 			}
 		}
 	} else {
-		write(fdudp[index], buf, len);
-		udp_send_pkt[index]++;
-		udp_send_byte[index] += len;
+		if (write(fdudp[index], buf, len) != len)
+			udp_send_err[index]++;
+		else {
+			udp_send_pkt[index]++;
+			udp_send_byte[index] += len;
+		}
 	}
 }
 
@@ -1010,18 +1014,19 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			print_addrinfo(MASTER);
 			if (master_slave)
 				print_addrinfo(SLAVE);
-			err_msg("master ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu",
+			err_msg("master ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu, udp_send_err: %lu",
 				(unsigned long)ping_send[MASTER], (unsigned long)pong_recv[MASTER], (unsigned long)ping_recv[MASTER],
-				(unsigned long)pong_send[MASTER]);
+				(unsigned long)pong_send[MASTER], udp_send_err[MASTER]);
 			if (master_slave)
-				err_msg(" slave ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu", (unsigned long)ping_send[SLAVE],
-					(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE]);
+				err_msg(" slave ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu, udp_send_err: %lu", (unsigned long)ping_send[SLAVE],
+					(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE], udp_send_err[SLAVE]);
 			if (myticket >= lasttm + 3600) {
 				ping_send[MASTER] = ping_send[SLAVE] = ping_recv[MASTER] = ping_recv[SLAVE] = 0;
 				pong_send[MASTER] = pong_send[SLAVE] = pong_recv[MASTER] = pong_recv[SLAVE] = 0;
 				lasttm = myticket;
 			}
-			err_msg("       raw interface recv:%lu/%lu send:%lu/%lu", raw_recv_pkt, raw_recv_byte, raw_send_pkt, raw_send_byte);
+			err_msg("       raw interface recv:%lu/%lu send:%lu/%lu, raw_send_err: %lu", raw_recv_pkt, raw_recv_byte, raw_send_pkt, raw_send_byte,
+				raw_send_err);
 			err_msg("master udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[MASTER], udp_recv_byte[MASTER], udp_send_pkt[MASTER],
 				udp_send_byte[MASTER]);
 			if (master_slave)
@@ -1482,9 +1487,11 @@ void process_udp_to_raw(int index)
 			sll.sll_family = AF_PACKET;
 			sll.sll_protocol = htons(ETH_P_ALL);
 			sll.sll_ifindex = ifindex;
-			sendto(fdraw, pbuf, len, 0, (struct sockaddr *)&sll, sizeof(sll));
+			if (sendto(fdraw, pbuf, len, 0, (struct sockaddr *)&sll, sizeof(sll)) != len)
+				raw_send_err++;
 		} else if ((mode == MODEI) || (mode == MODEB))
-			write(fdraw, pbuf, len);
+			if (write(fdraw, pbuf, len) != len)
+				raw_send_err++;
 	}
 }
 
@@ -1846,10 +1853,12 @@ int main(int argc, char *argv[])
 			snprintf(buf, MAXLEN, "%s addr add %s/%s dev %s; %s link set %s up", IPCMD, argv[i + 4], argv[i + 5], actualname, IPCMD, actualname);
 		if (debug)
 			printf(" run cmd: %s\n", buf);
-		system(buf);
+		if (system(buf) != 0)
+			printf(" run cmd: %s returned not 0\n", buf);
 		if (debug) {
 			snprintf(buf, MAXLEN, "%s addr", IPCMD);
-			system(buf);
+			if (system(buf) != 0)
+				printf(" run cmd: %s returned not 0\n", buf);
 		}
 	} else if (mode == MODEB) {	// bridge mode
 		char *actualname = NULL;
@@ -1865,18 +1874,22 @@ int main(int argc, char *argv[])
 			snprintf(buf, MAXLEN, "%s link set %s up; %s addif %s %s", IPCMD, actualname, BRIDGECMD, argv[i + 4], actualname);
 		if (debug)
 			printf(" run cmd: %s\n", buf);
-		system(buf);
+		if (system(buf) != 0)
+			printf(" run cmd: %s returned not 0\n", buf);
 		if (debug) {
 			snprintf(buf, MAXLEN, "%s addr", IPCMD);
-			system(buf);
+			if (system(buf) != 0)
+				printf(" run cmd: %s returned not 0\n", buf);
 			snprintf(buf, MAXLEN, "%s show", BRIDGECMD);
-			system(buf);
+			if (system(buf) != 0)
+				printf(" run cmd: %s returned not 0\n", buf);
 		}
 	}
 	if (run_cmd[0]) {	// run command when tunnel connected
 		if (debug)
 			printf(" run user cmd: %s\n", run_cmd);
-		system(run_cmd);
+		if (system(run_cmd) != 0)
+			printf(" run cmd: %s returned not 0\n", run_cmd);
 	}
 	// create a pthread to forward packets from master udp to raw
 	if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_master, NULL)
