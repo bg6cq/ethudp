@@ -56,6 +56,7 @@ Each server connects Internet via interface eth0, IP is IPA & IPB.
 On server A, run following command
 ````
 ip link set eth1 up
+ethtool -K eth1 gro off
 ifconfig eth1 mtu 1508
 ./EthUDP -e IPA 6000 IPB 6000 eth1
 ````
@@ -63,6 +64,7 @@ ifconfig eth1 mtu 1508
 On server B, run following command
 ````
 ip link set eth1 up
+ethtool -K eth1 gro off
 ifconfig eth1 mtu 1508
 ./EthUDP -e IPB 6000 IPA 6000 eth1
 ````
