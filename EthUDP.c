@@ -1214,7 +1214,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				continue;
 			len = header->len;
 		}
-			return;
+			else return;
 
 		if (len <= 0)
 			continue;
