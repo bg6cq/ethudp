@@ -12,11 +12,11 @@ Ethernet over UDP, similar of VXLAN, transport Ethernet packet via UDP, support 
 
 CentOS:
 ````
-openssl-devel lz4-devel
+openssl-devel lz4-devel libpcap-devel
 ````
 Debian
 ````
-libssl-dev liblz4-dev
+libssl-dev liblz4-dev libpcap-dev
 ````
 and Debian liblz4 miss LZ4_compress_fast, you need rebuild it as https://github.com/facebook/mcrouter/issues/149
 ````
