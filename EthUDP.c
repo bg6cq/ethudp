@@ -1103,7 +1103,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 
 void process_raw_to_udp(void)	// used by mode==0 & mode==1
 {
-	u_int8_t buf[MAX_PACKET_SIZE + VLAN_TAG_LEN];
+	u_int8_t *buf, mybuf[MAX_PACKET_SIZE + VLAN_TAG_LEN];
 	u_int8_t nbuf[MAX_PACKET_SIZE + VLAN_TAG_LEN + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
 	u_int8_t *pbuf;
 	int len;
@@ -1111,6 +1111,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 
 	while (1) {		// read from eth rawsocket
 		if (mode == MODEE) {
+			buf = mybuf;
 #ifdef HAVE_PACKET_AUXDATA
 			struct sockaddr from;
 			struct iovec iov;
@@ -1191,6 +1192,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			len = recv(fdraw, buf, MAX_PACKET_SIZE, 0);
 #endif
 		} else if ((mode == MODEI) || (mode == MODEB)) {
+			buf = mybuf;
 			len = read(fdraw, buf, MAX_PACKET_SIZE);
 			if (len >= MAX_PACKET_SIZE) {
 				err_msg("recv long pkt from raw, len=%d", len);
