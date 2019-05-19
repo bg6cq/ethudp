@@ -1208,7 +1208,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		if (debug) {
 			printPacket((EtherPacket *) (buf + offset), len, "from local  rawsocket:");
 			if (offset)
-				printf("offset=%d\n", offset);
+				Debug("offset=%d", offset);
 		}
 		if (!read_only && fixmss)	// read only, no fix_mss
 			fix_mss(buf + offset, len, current_remote);
@@ -1395,7 +1395,7 @@ void process_udp_to_raw(int index)
 							Debug("password ok");
 						save_remote_addr(&rmt, sock_len, index);
 					} else if (debug)
-						printf("error\n");
+						Debug("passowrd error");
 					continue;
 				}
 				if (memcmp((void *)&remote_addr[index], &rmt, sock_len)) {
@@ -1428,6 +1428,17 @@ void process_udp_to_raw(int index)
 				continue;
 			udp_recv_pkt[index]++;
 			udp_recv_byte[index] += len;
+			if (memcmp(pbuf, "PASSWORD:", 9) == 0) {	// got password packet
+				if (debug) {
+					Debug("password packet from remote %s", pbuf);
+					if ((memcmp(pbuf + 9, mypassword, strlen(mypassword)) == 0)
+						&& (*(pbuf + 9 + strlen(mypassword)) == 0))
+						Debug("password ok");
+					else
+						Debug("error\n");
+				}
+				continue;
+			}
 		}
 
 		if (memcmp(pbuf, "PING:PING:", 10) == 0) {
