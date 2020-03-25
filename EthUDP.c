@@ -149,8 +149,8 @@ volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
 volatile long long raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
 volatile long long udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
 volatile long long udp_send_err[2], raw_send_err;
-volatile int master_status = STATUS_OK;
-volatile int slave_status = STATUS_OK;
+volatile int master_status = STATUS_BAD;
+volatile int slave_status = STATUS_BAD;
 volatile int current_remote = MASTER;
 volatile int got_signal = 1;
 
