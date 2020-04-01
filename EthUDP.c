@@ -982,9 +982,11 @@ void print_addrinfo(int index)
 		rp = ntohs(r->sin_port);
 		inet_ntop(AF_INET, &r->sin_addr, remoteip, 200);
 		if (nat[index])
-			err_msg("%s: %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+			err_msg("%s: ST:%d %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip, lp,
+				remoteip, rp, cmd_remoteip, c_rp);
 		else
-			err_msg("%s: %s:%d --> %s:%d", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp);
+			err_msg("%s: ST:%d %s:%d --> %s:%d", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip, lp, remoteip,
+				rp);
 	} else if (local_addr[index].ss_family == AF_INET6) {
 		struct sockaddr_in6 *r = (struct sockaddr_in6 *)(&local_addr[index]);
 		int lp, c_rp, rp;
@@ -997,9 +999,11 @@ void print_addrinfo(int index)
 		rp = ntohs(r->sin6_port);
 		inet_ntop(AF_INET6, &r->sin6_addr, remoteip, 200);
 		if (nat[index])
-			err_msg("%s: [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+			err_msg("%s: ST:%d [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip,
+				lp, remoteip, rp, cmd_remoteip, c_rp);
 		else
-			err_msg("%s: [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp);
+			err_msg("%s: ST:%d [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip, lp,
+				remoteip, rp);
 	}
 }
 
@@ -1013,9 +1017,8 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
 
-			err_msg("============= version: %s, myticket=%lu, master_slave=%d, current_remote=%s",
-				VERSION, myticket, master_slave, current_remote == 0 ? "MASTER" : "SLAVE");
-			err_msg("master_status=%d, slave_status=%d, loopback_check=%d", master_status, slave_status, loopback_check);
+			err_msg("============= version: %s, myticket=%lu, master_slave=%d, current_remote=%s, loopback_check=%d",
+				VERSION, myticket, master_slave, current_remote == 0 ? "MASTER" : "SLAVE", loopback_check);
 			print_addrinfo(MASTER);
 			if (master_slave)
 				print_addrinfo(SLAVE);
