@@ -37,6 +37,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <lz4.h>
+#include <pcap.h>
 
 #define MAXLEN 			2048
 #define MAX_PACKET_SIZE		2048
@@ -50,6 +51,7 @@
 #define MODEE	0		// raw ether bridge mode
 #define MODEI	1		// tap interface mode
 #define MODEB	2		// bridge mode
+#define MODET	3		// tcpdump
 
 //#define DEBUGPINGPONG 1
 //#define DEBUGSSL      1
@@ -129,6 +131,7 @@ int enc_key_len = 0;
 
 int fdudp[2], fdraw;
 int nat[2];
+pcap_t *pcap_handle;
 
 int lz4 = 0;
 volatile long long udp_total = 0;
@@ -1204,7 +1207,13 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				err_msg("recv long pkt from raw, len=%d", len);
 				len = MAX_PACKET_SIZE;
 			}
-		} else
+		} else if (mode == MODET) {
+			struct pcap_pkthdr *header;
+			int r = pcap_next_ex(pcap_handle, &header, (const u_char **)&buf);
+			if (r <= 0)
+				continue;
+			len = header->len;
+		}
 			return;
 
 		if (len <= 0)
@@ -1614,6 +1623,7 @@ void usage(void)
 	printf("            [ localip localport remoteip remoteport ]\n");
 	printf("./EthUDP -b [ options ] localip localport remoteip remoteport bridge \\\n");
 	printf("            [ localip localport remoteip remoteport ]\n");
+	printf("./EthUDP -t localip localport remoteip remoteport eth? [ pcap_filter_string ]\n");
 	printf(" options:\n");
 	printf("    -p password\n");
 	printf("    -enc [ xor|aes-128|aes-192|aes-256 ]\n");
@@ -1695,6 +1705,8 @@ int main(int argc, char *argv[])
 			mode = MODEI;
 		else if (strcmp(argv[i], "-b") == 0)
 			mode = MODEB;
+		else if (strcmp(argv[i], "-t") == 0)
+			mode = MODET;
 		else if (strcmp(argv[i], "-d") == 0)
 			debug = 1;
 		else if (strcmp(argv[i], "-r") == 0) {
@@ -1800,6 +1812,10 @@ int main(int argc, char *argv[])
 		else if (argc - i != 6)
 			usage();
 	}
+	if (mode == MODET ) {
+		if (argc -i < 5)
+			usage();
+	}
 	// enc_algorithm set, but enc_key not set, set enc_key to 123456
 	if ((enc_algorithm != 0) && (enc_key_len == 0)) {
 		memset(enc_key, 0, MAXLEN);
@@ -1811,7 +1827,7 @@ int main(int argc, char *argv[])
 		usage();
 	if (debug) {
 		printf("         debug = 1\n");
-		printf("          mode = %d (0 raw eth bridge, 1 interface, 2 bridge)\n", mode);
+		printf("          mode = %d (0 raw eth bridge, 1 interface, 2 bridge, 3 tcpdump)\n", mode);
 		printf("      password = %s\n", mypassword);
 		printf(" enc_algorithm = %s\n", enc_algorithm == XOR ? "xor"
 #ifdef ENABLE_OPENSSL
@@ -1913,6 +1929,22 @@ int main(int argc, char *argv[])
 			if (system(buf) != 0)
 				printf(" run cmd: %s returned not 0\n", buf);
 		}
+	} else if (mode == MODET) { // tcpdump mode
+		char errbuf[PCAP_ERRBUF_SIZE];  /* Error string */
+		read_only = 1;
+		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
+		pcap_handle = pcap_open_live(argv[i+4], MAX_PACKET_SIZE, 0, 1000, errbuf);
+		if( argc - i == 6) {
+			struct bpf_program pgm;
+			if (pcap_compile(pcap_handle, &pgm, argv[i+5], 1, PCAP_NETMASK_UNKNOWN) == -1) {
+				err_msg("pcap_filter compile error\n");
+				exit(0);
+			}
+			if (pcap_setfilter(pcap_handle, &pgm) == -1) {
+				err_msg("pcap_setfilter error\n");
+				exit(0);
+			}
+		}
 	}
 	if (run_cmd[0]) {	// run command when tunnel connected
 		if (debug)
@@ -1920,15 +1952,14 @@ int main(int argc, char *argv[])
 		if (system(run_cmd) != 0)
 			printf(" run cmd: %s returned not 0\n", run_cmd);
 	}
+
 	// create a pthread to forward packets from master udp to raw
-	if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_master, NULL)
-	    != 0)
+	if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_master, NULL) != 0)
 		err_sys("pthread_create udp_to_raw_master error");
 
 	// create a pthread to forward packets from slave udp to raw
 	if (master_slave)
-		if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_slave, NULL)
-		    != 0)
+		if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_slave, NULL) != 0)
 			err_sys("pthread_create udp_to_raw_slave error");
 
 	if (pthread_create(&tid, NULL, (void *)send_keepalive_to_udp, NULL) != 0)	// send keepalive to remote  
