@@ -144,11 +144,11 @@ int remote_vlan[4096];
 volatile struct sockaddr_storage local_addr[2];
 volatile struct sockaddr_storage cmd_remote_addr[2];
 volatile struct sockaddr_storage remote_addr[2];
-volatile u_int32_t myticket, last_pong[2];	// myticket inc 1 every 1 second after start
-volatile u_int32_t ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
-volatile long long raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
-volatile long long udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
-volatile long long udp_send_err[2], raw_send_err;
+volatile unsigned long myticket, last_pong[2];	// myticket inc 1 every 1 second after start
+volatile unsigned long ping_send[2], ping_recv[2], pong_send[2], pong_recv[2];
+volatile unsigned long raw_send_pkt, raw_send_byte, raw_recv_pkt, raw_recv_byte;
+volatile unsigned long udp_send_pkt[2], udp_send_byte[2], udp_recv_pkt[2], udp_recv_byte[2];
+volatile unsigned long udp_send_err[2], raw_send_err;
 volatile int master_status = STATUS_BAD;
 volatile int slave_status = STATUS_BAD;
 volatile int current_remote = MASTER;
@@ -311,6 +311,10 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 		if (getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0)
 			Debug("UDP socket RCVBUF setting to %d\n", n);
 	}
+// set IP_MTU_DISCOVER, otherwise UDP has DFbit set
+	n = 0;
+	if (setsockopt(sockfd, IPPROTO_IP, IP_MTU_DISCOVER, &n, sizeof(n)) != 0)
+		err_msg("udp_xeonnect setsockopt returned error, errno %d\n", errno);
 
 	bzero(&hints, sizeof(struct addrinfo));
 	hints.ai_family = AF_UNSPEC;
@@ -978,9 +982,11 @@ void print_addrinfo(int index)
 		rp = ntohs(r->sin_port);
 		inet_ntop(AF_INET, &r->sin_addr, remoteip, 200);
 		if (nat[index])
-			err_msg("%s: %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+			err_msg("%s: ST:%d %s:%d --> %s:%d(%s:%d)", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip, lp,
+				remoteip, rp, cmd_remoteip, c_rp);
 		else
-			err_msg("%s: %s:%d --> %s:%d", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp);
+			err_msg("%s: ST:%d %s:%d --> %s:%d", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip, lp, remoteip,
+				rp);
 	} else if (local_addr[index].ss_family == AF_INET6) {
 		struct sockaddr_in6 *r = (struct sockaddr_in6 *)(&local_addr[index]);
 		int lp, c_rp, rp;
@@ -993,9 +999,11 @@ void print_addrinfo(int index)
 		rp = ntohs(r->sin6_port);
 		inet_ntop(AF_INET6, &r->sin6_addr, remoteip, 200);
 		if (nat[index])
-			err_msg("%s: [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp, cmd_remoteip, c_rp);
+			err_msg("%s: ST:%d [%s]:%d --> [%s]:%d([%s]:%d)", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip,
+				lp, remoteip, rp, cmd_remoteip, c_rp);
 		else
-			err_msg("%s: [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : " SLAVE", localip, lp, remoteip, rp);
+			err_msg("%s: ST:%d [%s]:%d --> [%s]:%d", index == 0 ? "MASTER" : " SLAVE", index == 0 ? master_status : slave_status, localip, lp,
+				remoteip, rp);
 	}
 }
 
@@ -1009,17 +1017,16 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 	while (1) {
 		if (got_signal || (myticket >= lasttm + 3600)) {	// log ping/pong every hour
 
-			err_msg("============= version: %s, myticket=%lu, master_slave=%d, master_status=%d, slave_status=%d, loopback_check=%d", VERSION,
-				(unsigned long)myticket, master_slave, master_status, slave_status, loopback_check);
+			err_msg("============= version: %s, myticket=%lu, master_slave=%d, current_remote=%s, loopback_check=%d",
+				VERSION, myticket, master_slave, current_remote == 0 ? "MASTER" : "SLAVE", loopback_check);
 			print_addrinfo(MASTER);
 			if (master_slave)
 				print_addrinfo(SLAVE);
 			err_msg("master ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu, udp_send_err: %lu",
-				(unsigned long)ping_send[MASTER], (unsigned long)pong_recv[MASTER], (unsigned long)ping_recv[MASTER],
-				(unsigned long)pong_send[MASTER], udp_send_err[MASTER]);
+				ping_send[MASTER], pong_recv[MASTER], ping_recv[MASTER], pong_send[MASTER], udp_send_err[MASTER]);
 			if (master_slave)
-				err_msg(" slave ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu, udp_send_err: %lu", (unsigned long)ping_send[SLAVE],
-					(unsigned long)pong_recv[SLAVE], (unsigned long)ping_recv[SLAVE], (unsigned long)pong_send[SLAVE], udp_send_err[SLAVE]);
+				err_msg(" slave ping_send/pong_recv: %lu/%lu, ping_recv/pong_send: %lu/%lu, udp_send_err: %lu", ping_send[SLAVE],
+					pong_recv[SLAVE], ping_recv[SLAVE], pong_send[SLAVE], udp_send_err[SLAVE]);
 			if (myticket >= lasttm + 3600) {
 				ping_send[MASTER] = ping_send[SLAVE] = ping_recv[MASTER] = ping_recv[SLAVE] = 0;
 				pong_send[MASTER] = pong_send[SLAVE] = pong_recv[MASTER] = pong_recv[SLAVE] = 0;
@@ -1032,7 +1039,7 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			if (master_slave)
 				err_msg(" slave udp interface recv:%lu/%lu send:%lu/%lu", udp_recv_pkt[SLAVE], udp_recv_byte[SLAVE], udp_send_pkt[SLAVE],
 					udp_send_byte[SLAVE]);
-			err_msg("udp %lld bytes, lz4 save %lld bytes, lz4 overhead %lld bytes, encrypt overhead %lld bytes, %.0f%%",
+			err_msg("udp %lu bytes, lz4 save %lu bytes, lz4 overhead %lu bytes, encrypt overhead %lu bytes, %.0f%%",
 				udp_total, compress_save, compress_overhead, encrypt_overhead,
 				100.0 * (udp_total - compress_save + compress_overhead + encrypt_overhead) / udp_total);
 			got_signal = 0;
@@ -1068,13 +1075,15 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 				master_status = STATUS_BAD;
 				if (master_slave)
 					current_remote = SLAVE;	// switch to SLAVE
-				err_msg("master OK-->BAD, current_remote is %s", current_remote == 0 ? "MASTER" : "SLAVE");
+				err_msg("master OK-->BAD, slave %s, current_remote is %s", slave_status == STATUS_OK ? "OK" : "BAD",
+					current_remote == 0 ? "MASTER" : "SLAVE");
 			}
 		} else {	// now master is BAD
 			if (myticket < last_pong[MASTER] + 4) {	// master BAD->OK
 				master_status = STATUS_OK;
 				current_remote = MASTER;	// switch to MASTER
-				err_msg("master BAD-->OK, current_remote is %s", current_remote == 0 ? "MASTER" : "SLAVE");
+				err_msg("master BAD-->OK, slave %s, current_remote is %s", slave_status == STATUS_OK ? "OK" : "BAD",
+					current_remote == 0 ? "MASTER" : "SLAVE");
 			}
 		}
 
@@ -1085,12 +1094,14 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			if (slave_status == STATUS_OK) {	// now slave is OK
 				if (myticket > last_pong[SLAVE] + 5) {	// slave OK->BAD
 					slave_status = STATUS_BAD;
-					err_msg("slave OK-->BAD");
+					err_msg("slave OK-->BAD, master %s, current_remote is %s", master_status == STATUS_OK ? "OK" : "BAD",
+						current_remote == 0 ? "MASTER" : "SLAVE");
 				}
 			} else {	// now slave is BAD
 				if (myticket < last_pong[SLAVE] + 4) {	// slave BAD->OK
 					slave_status = STATUS_OK;
-					err_msg("slave BAD-->OK");
+					err_msg("slave BAD-->OK, master %s, current_remote is %s", master_status == STATUS_OK ? "OK" : "BAD",
+						current_remote == 0 ? "MASTER" : "SLAVE");
 				}
 			}
 		}
@@ -1432,7 +1443,7 @@ void process_udp_to_raw(int index)
 				if (debug) {
 					Debug("password packet from remote %s", pbuf);
 					if ((memcmp(pbuf + 9, mypassword, strlen(mypassword)) == 0)
-						&& (*(pbuf + 9 + strlen(mypassword)) == 0))
+					    && (*(pbuf + 9 + strlen(mypassword)) == 0))
 						Debug("password ok");
 					else
 						Debug("error\n");
@@ -1789,6 +1800,13 @@ int main(int argc, char *argv[])
 		else if (argc - i != 6)
 			usage();
 	}
+	// enc_algorithm set, but enc_key not set, set enc_key to 123456
+	if ((enc_algorithm != 0) && (enc_key_len == 0)) {
+		memset(enc_key, 0, MAXLEN);
+		strncpy((char *)enc_key, "123456", MAXLEN - 1);
+		enc_key_len = strlen((char *)enc_key);
+	} else if ((enc_algorithm == 0) && (enc_key_len != 0))	// enc_key set, but enc_algorithm not set, set enc_algorithm to AES-128
+		enc_algorithm = AES_128;
 	if (mode == -1)
 		usage();
 	if (debug) {
