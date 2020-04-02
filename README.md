@@ -151,16 +151,23 @@ how it works:
 * read packet from raw socket, send to udp socket
 * read packet from udp socket, send to raw socket
 
+
+## 4. mode t
+
+using libpcap to capure packets and tranfer to remote site
+
 ## Note:
 1. support 802.1Q VLAN frame transport
 
 NIC MTU should set to 1504 or 1508, for single 802.1Q or double 802.1Q tag. But some NICs do not allow change the default 1500.
 
 2. support automatic tcp mss fix
+
 3. if your NIC support GRO, you should disable it by
 ````
 ethtool -K eth1 gro off
 ````
+
 4. support connection from NATed server
 
 If server A has public IP, while server B connect from NATed IP, please run (port is 0)
@@ -197,4 +204,4 @@ vlanmap.txt
 ```
 ./EthUDP ... -mtu 1500
 ```
-split UDP packet lenght exceed 1500 bytes to two UDP packets
+split UDP packet length exceed 1500 bytes to two UDP packets

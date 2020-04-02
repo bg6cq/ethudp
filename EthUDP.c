@@ -1215,8 +1215,8 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			if (r <= 0)
 				continue;
 			len = header->len;
-		}
-			else return;
+		} else
+			return;
 
 		if (len <= 0)
 			continue;
@@ -1814,8 +1814,8 @@ int main(int argc, char *argv[])
 		else if (argc - i != 6)
 			usage();
 	}
-	if (mode == MODET ) {
-		if (argc -i < 5)
+	if (mode == MODET) {
+		if (argc - i < 5)
 			usage();
 	}
 	// enc_algorithm set, but enc_key not set, set enc_key to 123456
@@ -1931,14 +1931,14 @@ int main(int argc, char *argv[])
 			if (system(buf) != 0)
 				printf(" run cmd: %s returned not 0\n", buf);
 		}
-	} else if (mode == MODET) { // tcpdump mode
-		char errbuf[PCAP_ERRBUF_SIZE];  /* Error string */
+	} else if (mode == MODET) {	// tcpdump mode
+		char errbuf[PCAP_ERRBUF_SIZE];	/* Error string */
 		read_only = 1;
 		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
-		pcap_handle = pcap_open_live(argv[i+4], MAX_PACKET_SIZE, 0, 1000, errbuf);
-		if( argc - i == 6) {
+		pcap_handle = pcap_open_live(argv[i + 4], MAX_PACKET_SIZE, 0, 1000, errbuf);
+		if (argc - i == 6) {
 			struct bpf_program pgm;
-			if (pcap_compile(pcap_handle, &pgm, argv[i+5], 1, PCAP_NETMASK_UNKNOWN) == -1) {
+			if (pcap_compile(pcap_handle, &pgm, argv[i + 5], 1, PCAP_NETMASK_UNKNOWN) == -1) {
 				err_msg("pcap_filter compile error\n");
 				exit(0);
 			}
@@ -1954,7 +1954,6 @@ int main(int argc, char *argv[])
 		if (system(run_cmd) != 0)
 			printf(" run cmd: %s returned not 0\n", run_cmd);
 	}
-
 	// create a pthread to forward packets from master udp to raw
 	if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_master, NULL) != 0)
 		err_sys("pthread_create udp_to_raw_master error");
