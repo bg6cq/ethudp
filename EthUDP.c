@@ -40,7 +40,7 @@
 #include <pcap.h>
 
 #define MAXLEN 			2048
-#define MAX_PACKET_SIZE		2048
+#define MAX_PACKET_SIZE		9234	// Jumbo Frame
 #define MAXFD   		64
 
 #define STATUS_BAD 	0
