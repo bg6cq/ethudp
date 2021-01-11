@@ -118,6 +118,7 @@ int packet_len = 1500;
 char name[MAXLEN];
 char run_cmd[MAXLEN];
 char dev_name[MAXLEN];
+int run_seconds = 0;
 
 int32_t ifindex;
 
@@ -1048,6 +1049,12 @@ void send_keepalive_to_udp(void)	// send keepalive to remote
 			got_signal = 0;
 		}
 		myticket++;
+		if (run_seconds > 0) {
+			if (myticket > run_seconds) {
+				err_msg("run_seconds %d expired, exit", run_seconds);
+				exit(0);
+			}
+		}
 		if (mypassword[0]) {
 			len = snprintf((char *)buf, MAX_PACKET_SIZE, "PASSWORD:%s", mypassword);
 			if (debug)
@@ -1637,6 +1644,7 @@ void usage(void)
 	printf("    -dev dev_name    rename tap interface to dev_name(mode i & b)\n");
 	printf("    -n name          name for syslog prefix\n");
 	printf("    -c run_cmd       run run_cmd after tunnel connected\n");
+	printf("    -x run_seconds   child process exit after run_seconds run\n");
 	printf("    -d    enable debug\n");
 	printf("    -r    read only of ethernet interface\n");
 	printf("    -w    write only of ethernet interface\n");
@@ -1790,6 +1798,11 @@ int main(int argc, char *argv[])
 			memset(enc_key, 0, MAXLEN);
 			strncpy((char *)enc_key, argv[i], MAXLEN - 1);
 			enc_key_len = strlen((char *)enc_key);
+		} else if (strcmp(argv[i], "-x") == 0) {
+			i++;
+			if (argc - i <= 0)
+				usage();
+			run_seconds = atoi(argv[i]);
 		} else if (strcmp(argv[i], "-c") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1848,6 +1861,7 @@ int main(int argc, char *argv[])
 		printf("           lz4 = %d\n", lz4);
 		printf("      dev_name = %s\n", dev_name);
 		printf("       run_cmd = %s\n", run_cmd);
+		printf("   run_seconds = %d\n", run_seconds);
 		printf("      cmd_line = ");
 		int n;
 		for (n = i; n < argc; n++)
