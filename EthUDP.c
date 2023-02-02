@@ -81,6 +81,8 @@ struct vlan_tag {
 };
 #endif
 
+u_int16_t ETHP8021Q;		// 0x8100 in network order
+
 struct _EtherHeader {
 	uint16_t destMAC1;
 	uint32_t destMAC2;
@@ -1195,9 +1197,9 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 					Debug("insert vlan id, recv len=%d", len);
 
 #ifdef TP_STATUS_VLAN_TPID_VALID
-				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? aux->tp_vlan_tpid : 0x0081);
+				tag->vlan_tpid = ((aux->tp_vlan_tpid || (aux->tp_status & TP_STATUS_VLAN_TPID_VALID)) ? htons(aux->tp_vlan_tpid) : ETHP8021Q);
 #else
-				tag->vlan_tpid = 0x0081;
+				tag->vlan_tpid = ETHP8021Q;
 #endif
 				tag->vlan_tci = htons(aux->tp_vlan_tci);
 
@@ -1245,7 +1247,7 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 		if (vlan_map && len >= 16) {
 			struct vlan_tag *tag;
 			tag = (struct vlan_tag *)(buf + offset + 12);
-			if (tag->vlan_tpid == 0x0081) {
+			if (tag->vlan_tpid == ETHP8021Q) {
 				int vlan;
 				vlan = ntohs(tag->vlan_tci) & 0xfff;
 				if (my_vlan[vlan] != vlan) {
@@ -1509,7 +1511,7 @@ void process_udp_to_raw(int index)
 		if (vlan_map && len >= 16) {
 			struct vlan_tag *tag;
 			tag = (struct vlan_tag *)(pbuf + 12);
-			if (tag->vlan_tpid == 0x0081) {
+			if (tag->vlan_tpid == ETHP8021Q) {
 				int vlan = ntohs(tag->vlan_tci) & 0xfff;
 				if (remote_vlan[vlan] != vlan) {
 					tag->vlan_tci = htons((ntohs(tag->vlan_tci) & 0xf000) + remote_vlan[vlan]);
@@ -1705,6 +1707,7 @@ int main(int argc, char *argv[])
 	pthread_t tid;
 	int i = 1;
 	int got_one = 0;
+	ETHP8021Q = htons(0x8100);
 	do {
 		got_one = 1;
 		if (argc - i <= 0)
