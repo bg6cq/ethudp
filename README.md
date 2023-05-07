@@ -43,12 +43,19 @@ Bridge two ethernets using UDP
 <pre>
           |-------Internet---------|
           |                        |
-     |    |                        |    |
-     |    |IPA                  IPB|    |
- eth1|    |eth0                eth0|    |eth1
-+----+----+----+              +----+----+----+
+          |                        |
+          |IPA                  IPB|
+          |eth0                eth0|
++---------+----+              +----+---------+
 |   server A   |              |   server B   |
-+--------------+              +--------------+
++------+-------+              +-------+------+
+       | eth1                    eth1 |
+       |                              |
+       |                              |
+       |                              |
+  +----+---+                     +----+----+
+  | HOST 1 |                     |  HOST 2 |
+  +--------+                     +---------+
 </pre>
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
@@ -69,7 +76,7 @@ ifconfig eth1 mtu 1508
 ./EthUDP -e IPB 6000 IPA 6000 eth1
 ````
 
-will bridge eth1 of two hosts via internet using UDP port 6000
+bridge HOST 1 and HOST 2 via internet using UDP port 6000
 
 how it works:
 * open raw socket for eth1
@@ -102,7 +109,7 @@ On server B, run following command
 ./EthUDP -i IPB 6000 IPA 6000 IP2 masklen
 ````
 
-will create a tap tunnel interface and setup IP1/masklen IP2/masklen via internet using UDP port 6000
+create a tap tunnel interface and setup IP1/masklen IP2/masklen via internet using UDP port 6000
 
 how it works:
 * open tap raw socket, setip addr
@@ -122,7 +129,12 @@ create a tap tunnel interface using UDP
 +------+-------+                  +-------+------+
 |   server A   +--bridge----bridge|   server B   |
 +------+-------+                  +-------+------+
-       |eth1                              |eth1
+       |eth1                          eth1|
+       |                                  |
+       |                                  |
+  +----+---+                         +----+----+
+  | HOST 1 |                         |  HOST 2 |
+  +--------+                         +---------+
 </pre>
 
 Each server connects Internet via interface eth0, IP is IPA & IPB.
@@ -143,7 +155,8 @@ brctl addif br0 eth1
 ./EthUDP -b IPB 6000 IPA 6000 br0
 ````
 
-will create a tap tunnel interface and add to br0 internet using UDP port 6000
+create a tap tunnel interface and add to br0 internet using UDP port 6000,
+Host 1 and Host 2 can communicate with each other.
 
 how it works:
 * open tap raw socket, run shell `brctl add if ??? tap?` add to bridge
