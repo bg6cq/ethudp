@@ -30,6 +30,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <netdb.h>
 #include <stdarg.h>
 #include <errno.h>
@@ -51,7 +52,8 @@
 #define MODEE	0		// raw ether bridge mode
 #define MODEI	1		// tap interface mode
 #define MODEB	2		// bridge mode
-#define MODET	3		// tcpdump
+#define MODET	3		// tcpdump full packet to remote
+#define MODEU	4		// tcpdump udp packet to remote
 
 //#define DEBUGPINGPONG 1
 //#define DEBUGSSL      1
@@ -1224,6 +1226,12 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			if (r <= 0)
 				continue;
 			len = header->len;
+		} else if (mode == MODEU) {
+			struct pcap_pkthdr *header;
+			int r = pcap_next_ex(pcap_handle, &header, (const u_char **)&buf);
+			if (r <= 0)
+				continue;
+			len = header->len;
 		} else
 			return;
 
@@ -1265,6 +1273,35 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			pbuf = nbuf;
 		} else
 			pbuf = buf + offset;
+		if (mode == MODEU) { // find the UDP packet
+			u_int8_t *packet;
+			if (len < 40)
+				return;
+			packet = buf + 12;      // skip ethernet dst & src addr
+			len -= 12;
+			if ((packet[0] == 0x81) && (packet[1] == 0x00)) {       // skip 802.1Q tag 0x8100
+				packet += 4;
+				len -= 4;
+			}
+			if ((packet[0] == 0x08) && (packet[1] == 0x00)) {       // IPv4 packet 0x0800
+				packet += 2;
+				len -= 2;
+				struct iphdr *ip = (struct iphdr *)packet;
+				if (ip->version != 4)
+					return; // only support IPv4
+				if (ntohs(ip->frag_off) & 0x1fff)
+					return; // not the first fragment
+				if (ip->protocol != IPPROTO_UDP)
+					return; // not UDP packet
+				if (ntohs(ip->tot_len) > len)
+					return; // tot_len should < len
+
+				struct udphdr *udph = (struct udphdr *)(packet + ip->ihl * 4);
+				pbuf = packet + ip->ihl * 4 + 8;
+				len = ntohs(udph->len) - 8;
+			} else
+				return;
+		}
 
 		send_udp_to_remote(pbuf, len, current_remote);
 	}
@@ -1635,6 +1672,7 @@ void usage(void)
 	printf("./EthUDP -b [ options ] localip localport remoteip remoteport bridge \\\n");
 	printf("            [ localip localport remoteip remoteport ]\n");
 	printf("./EthUDP -t localip localport remoteip remoteport eth? [ pcap_filter_string ]\n");
+	printf("./EthUDP -u localip localport remoteip remoteport eth? pcap_filter_string\n");
 	printf(" options:\n");
 	printf("    -p password\n");
 	printf("    -enc [ xor|aes-128|aes-192|aes-256 ]\n");
@@ -1720,6 +1758,8 @@ int main(int argc, char *argv[])
 			mode = MODEB;
 		else if (strcmp(argv[i], "-t") == 0)
 			mode = MODET;
+		else if (strcmp(argv[i], "-u") == 0)
+			mode = MODEU;
 		else if (strcmp(argv[i], "-d") == 0)
 			debug = 1;
 		else if (strcmp(argv[i], "-r") == 0) {
@@ -1834,6 +1874,10 @@ int main(int argc, char *argv[])
 		if (argc - i < 5)
 			usage();
 	}
+	if (mode == MODET) {
+		if (argc - i < 5)
+			usage();
+	}
 	// enc_algorithm set, but enc_key not set, set enc_key to 123456
 	if ((enc_algorithm != 0) && (enc_key_len == 0)) {
 		memset(enc_key, 0, MAXLEN);
@@ -1845,7 +1889,7 @@ int main(int argc, char *argv[])
 		usage();
 	if (debug) {
 		printf("         debug = 1\n");
-		printf("          mode = %d (0 raw eth bridge, 1 interface, 2 bridge, 3 tcpdump)\n", mode);
+		printf("          mode = %d (0 raw eth bridge, 1 interface, 2 bridge, 3 tcpdump, 4 tcpdump udp)\n", mode);
 		printf("      password = %s\n", mypassword);
 		printf(" enc_algorithm = %s\n", enc_algorithm == XOR ? "xor"
 #ifdef ENABLE_OPENSSL
@@ -1948,7 +1992,7 @@ int main(int argc, char *argv[])
 			if (system(buf) != 0)
 				printf(" run cmd: %s returned not 0\n", buf);
 		}
-	} else if (mode == MODET) {	// tcpdump mode
+	} else if ((mode == MODET) || (mode == MODEU)) {	// tcpdump mode
 		char errbuf[PCAP_ERRBUF_SIZE];	/* Error string */
 		read_only = 1;
 		fdudp[MASTER] = udp_xconnect(argv[i], argv[i + 1], argv[i + 2], argv[i + 3], MASTER);
@@ -1980,8 +2024,9 @@ int main(int argc, char *argv[])
 		if (pthread_create(&tid, NULL, (void *)process_udp_to_raw_slave, NULL) != 0)
 			err_sys("pthread_create udp_to_raw_slave error");
 
-	if (pthread_create(&tid, NULL, (void *)send_keepalive_to_udp, NULL) != 0)	// send keepalive to remote  
-		err_sys("pthread_create send_keepalive error");
+	if ((mode != MODET) && (mode != MODEU))
+		if (pthread_create(&tid, NULL, (void *)send_keepalive_to_udp, NULL) != 0)	// send keepalive to remote  
+			err_sys("pthread_create send_keepalive error");
 
 	//  forward packets from raw to udp
 	process_raw_to_udp();

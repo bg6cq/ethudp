@@ -167,7 +167,11 @@ how it works:
 
 ## 4. mode t
 
-using libpcap to capure packets and tranfer to remote site
+using libpcap to capture packets and send full ethernet packet to remote site
+
+## 5. mode u
+
+using libpcap to capture udp packets and send udp packet to remote site
 
 ## Note:
 1. support 802.1Q VLAN frame transport
