@@ -121,7 +121,7 @@ int loopback_check = 0;
 int packet_len = 1500;
 char name[MAXLEN];
 char run_cmd[MAXLEN];
-char dev_name[MAXLEN];
+char dev_name[IFNAMSIZ];
 int run_seconds = 0;
 
 int32_t ifindex;
@@ -1799,7 +1799,7 @@ int main(int argc, char *argv[])
 			i++;
 			if (argc - i <= 0)
 				usage();
-			strncpy(dev_name, argv[i], MAXLEN - 1);
+			strncpy(dev_name, argv[i], IFNAMSIZ - 1);
 		} else if (strcmp(argv[i], "-n") == 0) {
 			i++;
 			if (argc - i <= 0)
