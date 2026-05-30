@@ -1611,7 +1611,7 @@ int open_tun(const char *dev, char **actual)
 	}
 	if (strlen(dev) > 3)	//unit number specified? 
 		strncpy(ifr.ifr_name, dev, IFNAMSIZ);
-		ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+	ifr.ifr_name[IFNAMSIZ - 1] = '\0';
 	if (ioctl(fd, TUNSETIFF, (void *)&ifr) < 0)	//? 
 	{
 		Debug("Cannot ioctl TUNSETIFF %s", dev);
@@ -1803,13 +1803,13 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			strncpy(dev_name, argv[i], IFNAMSIZ - 1);
-			dev_name[IFNAMSIZ - 1] = ' ';
+			dev_name[IFNAMSIZ - 1] = '\0';
 		} else if (strcmp(argv[i], "-n") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
 			strncpy(name, argv[i], MAXLEN - 1);
-			name[MAXLEN - 1] = ' ';
+			name[MAXLEN - 1] = '\0';
 		} else if (strcmp(argv[i], "-lz4") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1825,7 +1825,7 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			strncpy(mypassword, argv[i], MAXLEN - 1);
-			mypassword[MAXLEN - 1] = ' ';
+			mypassword[MAXLEN - 1] = '\0';
 		} else if (strcmp(argv[i], "-enc") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1858,7 +1858,7 @@ int main(int argc, char *argv[])
 				usage();
 			memset(run_cmd, 0, MAXLEN);
 			strncpy((char *)run_cmd, argv[i], MAXLEN - 1);
-			run_cmd[MAXLEN - 1] = ' ';
+			run_cmd[MAXLEN - 1] = '\0';
 		} else
 			got_one = 0;
 		if (got_one)
