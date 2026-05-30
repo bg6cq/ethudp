@@ -68,7 +68,7 @@
 #include <openssl/evp.h>
 #define AES_128 2
 #define AES_192 3
-#define AES_256 3
+#define AES_256 4
 #else
 #define EVP_MAX_BLOCK_LENGTH 0
 #endif
