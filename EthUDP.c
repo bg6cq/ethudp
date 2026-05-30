@@ -1611,6 +1611,7 @@ int open_tun(const char *dev, char **actual)
 	}
 	if (strlen(dev) > 3)	//unit number specified? 
 		strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+		ifr.ifr_name[IFNAMSIZ - 1] = '\0';
 	if (ioctl(fd, TUNSETIFF, (void *)&ifr) < 0)	//? 
 	{
 		Debug("Cannot ioctl TUNSETIFF %s", dev);
