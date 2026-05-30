@@ -1237,6 +1237,9 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			if (r <= 0)
 				continue;
 			len = header->len;
+				if (len > (int)sizeof(mybuf)) len = sizeof(mybuf);
+				memcpy(mybuf, buf, len);
+				buf = mybuf;
 		} else
 			return;
 
