@@ -93,7 +93,7 @@ struct _EtherHeader {
 	uint32_t VLANTag;
 	uint16_t type;
 	int32_t payload;
-} __attribute__ ((packed));
+} __attribute__((packed));
 
 typedef struct _EtherHeader EtherPacket;
 
@@ -271,7 +271,7 @@ void daemon_init(const char *pname, int facility)
 	openlog(pname, LOG_PID, facility);
 }
 
-int udp_server(const char *host, const char *serv, socklen_t * addrlenp, int index)
+int udp_server(const char *host, const char *serv, socklen_t *addrlenp, int index)
 {
 	int sockfd, n;
 	int on = 1;
@@ -379,7 +379,7 @@ int udp_xconnect(char *lhost, char *lserv, char *rhost, char *rserv, int index)
 /**
  * Open a rawsocket for the network interface
  */
-int32_t open_rawsocket(char *ifname, int32_t * rifindex)
+int32_t open_rawsocket(char *ifname, int32_t *rifindex)
 {
 	unsigned char buf[MAX_PACKET_SIZE];
 	int32_t ifindex;
@@ -460,7 +460,7 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 	return fd;
 }
 
-int xor_encrypt(u_int8_t * buf, int n, u_int8_t * nbuf)
+int xor_encrypt(u_int8_t *buf, int n, u_int8_t *nbuf)
 {
 	int i;
 	for (i = 0; i < n; i++)
@@ -469,7 +469,7 @@ int xor_encrypt(u_int8_t * buf, int n, u_int8_t * nbuf)
 }
 
 #ifdef ENABLE_OPENSSL
-int openssl_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
+int openssl_encrypt(u_int8_t *buf, int len, u_int8_t *nbuf)
 {
 	EVP_CIPHER_CTX *ctx;
 	int outlen1, outlen2;
@@ -494,7 +494,7 @@ int openssl_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 	return len;
 }
 
-int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
+int openssl_decrypt(u_int8_t *buf, int len, u_int8_t *nbuf)
 {
 
 	EVP_CIPHER_CTX *ctx;
@@ -521,7 +521,7 @@ int openssl_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 }
 #endif
 
-int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
+int do_encrypt(u_int8_t *buf, int len, u_int8_t *nbuf)
 {
 	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
 	int nlen;
@@ -568,7 +568,7 @@ int do_encrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
 	return nlen;
 }
 
-int do_decrypt(u_int8_t * buf, int len, u_int8_t * nbuf)
+int do_decrypt(u_int8_t *buf, int len, u_int8_t *nbuf)
 {
 	u_int8_t lzbuf[MAX_PACKET_SIZE + LZ4_SPACE];
 	if (enc_key_len > 0) {
@@ -624,7 +624,7 @@ char *stamp(void)
 	return st_buf;
 }
 
-void printPacket(EtherPacket * packet, ssize_t packetSize, char *message)
+void printPacket(EtherPacket *packet, ssize_t packetSize, char *message)
 {
 	printf("%s ", stamp());
 
@@ -656,7 +656,7 @@ u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[], u_int16_t dest_a
 
 	/* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
 	if (nleft > 0)
-		sum += ((u_int8_t)(*w)) << 8;
+		sum += ((u_int8_t) (*w)) << 8;
 
 	/* add the pseudo header */
 	sum += src_addr[0];
@@ -691,7 +691,7 @@ u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[], u_int16_t des
 
 	/* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
 	if (nleft > 0)
-		sum += ((u_int8_t)(*w)) << 8;
+		sum += ((u_int8_t) (*w)) << 8;
 
 	/* add the pseudo header */
 	int i;
@@ -711,7 +711,7 @@ u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[], u_int16_t des
 	return ((u_int16_t) sum);
 }
 
-static unsigned int optlen(const u_int8_t * opt, unsigned int offset)
+static unsigned int optlen(const u_int8_t *opt, unsigned int offset)
 {
 	/* Beware zero-length options: make finite progress */
 	if (opt[offset] <= TCPOPT_NOP || opt[offset + 1] == 0)
@@ -720,7 +720,7 @@ static unsigned int optlen(const u_int8_t * opt, unsigned int offset)
 		return opt[offset + 1];
 }
 
-void fix_mss(u_int8_t * buf, int len, int index)
+void fix_mss(u_int8_t *buf, int len, int index)
 {
 	u_int8_t *packet;
 	int i;
@@ -827,7 +827,7 @@ void fix_mss(u_int8_t * buf, int len, int index)
 
 /*  return 1 if packet will cause loopback, DSTIP or SRCIP == remote address && PROTO == UDP
 */
-int do_loopback_check(u_int8_t * buf, int len)
+int do_loopback_check(u_int8_t *buf, int len)
 {
 	u_int8_t *packet;
 
@@ -916,7 +916,7 @@ int do_loopback_check(u_int8_t * buf, int len)
 
 void send_udp_to_remote(u_int8_t * buf, int len, int index);
 
-void send_frag_udp(u_int8_t * buf, int len, int index)
+void send_frag_udp(u_int8_t *buf, int len, int index)
 {
 	unsigned char newbuf[MAX_PACKET_SIZE];
 	if (len >= 2000)	// should not go here
@@ -944,7 +944,7 @@ void send_frag_udp(u_int8_t * buf, int len, int index)
 		udp_frg_seq = 0;
 }
 
-void send_udp_to_remote(u_int8_t * buf, int len, int index)	// send udp packet to remote 
+void send_udp_to_remote(u_int8_t *buf, int len, int index)	// send udp packet to remote 
 {
 	if ((mtu > 0) && (len > mtu - 28))
 		return send_frag_udp(buf, len, index);
@@ -1232,7 +1232,8 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			if (r <= 0)
 				continue;
 			len = header->len;
-			if (len > (int)sizeof(mybuf)) len = sizeof(mybuf);
+			if (len > (int)sizeof(mybuf))
+				len = sizeof(mybuf);
 			memcpy(mybuf, buf, len);
 			buf = mybuf;
 		} else if (mode == MODEU) {
@@ -1241,9 +1242,10 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			if (r <= 0)
 				continue;
 			len = header->len;
-				if (len > (int)sizeof(mybuf)) len = sizeof(mybuf);
-				memcpy(mybuf, buf, len);
-				buf = mybuf;
+			if (len > (int)sizeof(mybuf))
+				len = sizeof(mybuf);
+			memcpy(mybuf, buf, len);
+			buf = mybuf;
 		} else
 			return;
 
@@ -1285,25 +1287,30 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			int plen;
 			pkt = buf + offset + 12;
 			plen = len - 12;
-			if (plen >= 4 && pkt[0] == 0x81 && pkt[1] == 0x00) { pkt += 4; plen -= 4; }
+			if (plen >= 4 && pkt[0] == 0x81 && pkt[1] == 0x00) {
+				pkt += 4;
+				plen -= 4;
+			}
 			if (plen >= 2 && pkt[0] == 0x08 && pkt[1] == 0x00) {
 				struct iphdr *ip = (struct iphdr *)(pkt + 2);
-				if (ip->version == 4 && !(ntohs(ip->frag_off) & 0x1fff) &&
-				    ip->protocol == IPPROTO_UDP) {
+				if (ip->version == 4 && !(ntohs(ip->frag_off) & 0x1fff) && ip->protocol == IPPROTO_UDP) {
 					int iphlen = ip->ihl * 4;
-					struct udphdr *udph = (struct udphdr *)((u_int8_t *)ip + iphlen);
+					struct udphdr *udph = (struct udphdr *)((u_int8_t *) ip + iphlen);
 					int udplen = ntohs(udph->len);
 					if (udplen >= 8) {
 						int paylen = udplen - 8;
-						u_int8_t *payload = (u_int8_t *)udph + 8;
+						u_int8_t *payload = (u_int8_t *) udph + 8;
 						if (paylen > (int)sizeof(mybuf) - offset)
 							paylen = (int)sizeof(mybuf) - offset;
 						memcpy(mybuf + offset, payload, paylen);
 						buf = mybuf;
 						len = paylen;
-					} else continue;
-				} else continue;
-			} else continue;
+					} else
+						continue;
+				} else
+					continue;
+			} else
+				continue;
 		}
 		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf + offset, len, nbuf);
@@ -1341,8 +1348,8 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 			err_msg("nat mode, change %s remote to [%s]:%d", index == 0 ? "master" : "slave",
 				inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 		} else
-		err_msg("nat mode, do not change %s remote to [%s]:%d", index == 0 ? "master" : "slave",
-			inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
+			err_msg("nat mode, do not change %s remote to [%s]:%d", index == 0 ? "master" : "slave",
+				inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 	}
 }
 
@@ -1886,14 +1893,14 @@ int main(int argc, char *argv[])
 		enc_key_len = strlen((char *)enc_key);
 	} else if ((enc_algorithm == 0) && (enc_key_len != 0))	// enc_key set, but enc_algorithm not set, set enc_algorithm to AES-128
 		enc_algorithm = AES_128;
-	#ifdef ENABLE_OPENSSL
+#ifdef ENABLE_OPENSSL
 	if (enc_algorithm == AES_128 && enc_key_len < 16)
 		err_msg("Warning: AES-128 key should be at least 16 bytes, got %d", enc_key_len);
 	else if (enc_algorithm == AES_192 && enc_key_len < 24)
 		err_msg("Warning: AES-192 key should be at least 24 bytes, got %d", enc_key_len);
 	else if (enc_algorithm == AES_256 && enc_key_len < 32)
 		err_msg("Warning: AES-256 key should be at least 32 bytes, got %d", enc_key_len);
-	#endif
+#endif
 	if (mode == -1)
 		usage();
 	if (debug) {
