@@ -171,7 +171,7 @@ using libpcap to capture packets and send full ethernet packet to remote site
 
 ## 5. mode u
 
-using libpcap to capture udp packets and send udp packet to remote site
+using libpcap to capture udp packets and send udp payload to remote site
 
 ## Note:
 1. support 802.1Q VLAN frame transport
@@ -179,6 +179,9 @@ using libpcap to capture udp packets and send udp packet to remote site
 NIC MTU should set to 1504 or 1508, for single 802.1Q or double 802.1Q tag. But some NICs do not allow change the default 1500.
 
 2. support automatic tcp mss fix
+````
+./EthUDP ... -mss 1450 ...
+````
 
 3. if your NIC support GRO, you should disable it by
 ````
@@ -189,8 +192,8 @@ ethtool -K eth1 gro off
 
 If server A has public IP, while server B connect from NATed IP, please run (port is 0)
 ````
-./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1 in A
-./EthUDP -e -p password IPB 6000 IPA 6000 eth1 in B
+./EthUDP -e -p password IPA 6000 0.0.0.0 0 eth1   # server A (NAT listener)
+./EthUDP -e -p password IPB 6000 IPA 6000 eth1     # server B (NAT client)
 ````
 5. support master slave switchover
 
@@ -200,6 +203,8 @@ Using master udp connection, switch to slave if master down(send/recv ping/pong 
 ./EthUDP ... IPB portB IPA portA ... SlaveIPB SlaveportB SlaveIPA SlaveportA
 ````
 6. support AES-128/192/256 encrypt/decrypt UDP traffic
+
+If `-k` is omitted with `-enc`, key defaults to `"123456"`. If `-k` is set without `-enc`, defaults to AES-128.
 ````
 ./EthUDP ... -enc aes-128 -k aes_key ...
 ````
@@ -221,4 +226,4 @@ vlanmap.txt
 ```
 ./EthUDP ... -mtu 1500
 ```
-split UDP packet length exceed 1500 bytes to two UDP packets
+split UDP packets exceeding (mtu - 28) bytes into two fragments (1036 - 1500)

@@ -1680,7 +1680,7 @@ void usage(void)
 	printf("./EthUDP -b [ options ] localip localport remoteip remoteport bridge \\\n");
 	printf("            [ localip localport remoteip remoteport ]\n");
 	printf("./EthUDP -t localip localport remoteip remoteport eth? [ pcap_filter_string ]\n");
-	printf("./EthUDP -u localip localport remoteip remoteport eth? pcap_filter_string\n");
+	printf("./EthUDP -u localip localport remoteip remoteport eth? [ pcap_filter_string ]\n");
 	printf(" options:\n");
 	printf("    -p password\n");
 	printf("    -enc [ xor|aes-128|aes-192|aes-256 ]\n");
