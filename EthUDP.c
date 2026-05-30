@@ -287,7 +287,7 @@ int udp_server(const char *host, const char *serv, socklen_t * addrlenp, int ind
 		if (sockfd < 0)
 			continue;	/* error, try next one */
 		memcpy((void *)&(local_addr[index]), res->ai_addr, res->ai_addrlen);
-		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, 1);
+		setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
 		if (bind(sockfd, res->ai_addr, res->ai_addrlen) == 0)
 			break;	/* success */
 		close(sockfd);	/* bind error, close and try next one */
