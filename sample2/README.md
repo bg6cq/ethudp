@@ -59,8 +59,8 @@ ethtool -K eth1 gro off
 ip link set eth1 up
 
 OPT="-k 123456 -enc aes-128 -p password"
-/usr/src/ethudp/EthUDP -e $OPT 222.110.92.27 6000 0.0.0.0 0 eth1
-/usr/src/ethudp/EthUDP -i $OPT 222.110.92.27 6001 0.0.0.0 0 172.16.10.1 24
+/usr/src/ethudp/EthUDP -e $OPT 202.110.92.27 6000 0.0.0.0 0 eth1
+/usr/src/ethudp/EthUDP -i $OPT 202.110.92.27 6001 0.0.0.0 0 172.16.10.1 24
 ````
 
 ## 站点B Linux机器的设置：
@@ -72,8 +72,8 @@ ethtool -K eth1 gro off
 ip link set eth1 up
 
 OPT="-k 123456 -enc aes-128 -p password"
-/usr/src/ethudp/EthUDP -e $OPT 192.168.10.2 6000 222.110.92.27 6000 eth1
-/usr/src/ethudp/EthUDP -i $OPT 192.168.10.2 6001 222.110.92.27 6001 172.16.10.2 24
+/usr/src/ethudp/EthUDP -e $OPT 192.168.10.2 6000 202.110.92.27 6000 eth1
+/usr/src/ethudp/EthUDP -i $OPT 192.168.10.2 6001 202.110.92.27 6001 172.16.10.2 24
 ````
 
 ## 配置说明
