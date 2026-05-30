@@ -424,7 +424,7 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 		memset(&t, 0, sizeof(t));
 		i = select(FD_SETSIZE, &fds, NULL, NULL, &t);
 		if (i > 0) {
-			recv(fd, buf, i, 0);
+			recv(fd, buf, sizeof(buf), 0);
 			l++;
 		};
 		Debug("interface %d flushed %d packets", ifindex, l);
