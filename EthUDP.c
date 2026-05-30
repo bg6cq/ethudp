@@ -160,7 +160,7 @@ volatile unsigned long udp_send_err[2], raw_send_err;
 volatile int master_status = STATUS_BAD;
 volatile int slave_status = STATUS_BAD;
 volatile int current_remote = MASTER;
-volatile int got_signal = 1;
+volatile sig_atomic_t got_signal = 1;
 
 void sig_handler_hup(int signo)
 {
