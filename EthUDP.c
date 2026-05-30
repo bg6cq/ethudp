@@ -1869,10 +1869,6 @@ int main(int argc, char *argv[])
 		if (argc - i < 5)
 			usage();
 	}
-	if (mode == MODET) {
-		if (argc - i < 5)
-			usage();
-	}
 	// enc_algorithm set, but enc_key not set, set enc_key to 123456
 	if ((enc_algorithm != 0) && (enc_key_len == 0)) {
 		memset(enc_key, 0, MAXLEN);
