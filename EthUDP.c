@@ -1332,7 +1332,7 @@ void save_remote_addr(struct sockaddr_storage *rmt, int sock_len, int index)
 			memcpy((void *)&remote_addr[index], rmt, sock_len);
 			err_msg("nat mode, change %s remote to [%s]:%d", index == 0 ? "master" : "slave",
 				inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
-		}
+		} else
 		err_msg("nat mode, do not change %s remote to [%s]:%d", index == 0 ? "master" : "slave",
 			inet_ntop(r->sin6_family, (void *)&r->sin6_addr, rip, 200), ntohs(r->sin6_port));
 	}
