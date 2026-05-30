@@ -1617,14 +1617,6 @@ int open_tun(const char *dev, char **actual)
 	size = strlen(ifr.ifr_name) + 1;
 	*actual = (char *)malloc(size);
 	memcpy(*actual, ifr.ifr_name, size);
-	// the following maybe no use
-	int n = 10 * 1024 * 1024;
-	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
-	if (debug) {
-		socklen_t ln = sizeof(n);
-		if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &n, &ln) == 0)
-			Debug("RAW socket RCVBUF setting to %d", n);
-	}
 	return fd;
 }
 
