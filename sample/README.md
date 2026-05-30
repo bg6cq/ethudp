@@ -14,7 +14,7 @@ N10Plus有4个千兆接口，无风扇运行，外形如下：
 
 On server A /etc/rc.local
 ````
-ip add add 222.195.81.240/24 dev eth0
+ip addr add 222.195.81.240/24 dev eth0
 ip link set eth0 up
 ip route add 0/0 via 222.195.81.1
 
@@ -27,7 +27,7 @@ ip link set eth1 up
 
 On server B /etc/rc.local
 ````
-ip add add 202.38.64.144/24 dev eth0
+ip addr add 202.38.64.144/24 dev eth0
 ip link set eth0 up
 ip route add 0/0 via 202.38.64.1
 
