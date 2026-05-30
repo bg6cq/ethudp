@@ -399,6 +399,7 @@ int32_t open_rawsocket(char *ifname, int32_t * rifindex)
 	if (!nopromisc) {	// set promiscuous mode
 		memset(&ifr, 0, sizeof(ifr));
 		strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+		ifr.ifr_name[IFNAMSIZ - 1] = '\0';
 		ioctl(fd, SIOCGIFFLAGS, &ifr);
 		ifr.ifr_flags |= IFF_PROMISC;
 		ioctl(fd, SIOCSIFFLAGS, &ifr);
