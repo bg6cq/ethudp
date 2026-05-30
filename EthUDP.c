@@ -1228,6 +1228,9 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 			if (r <= 0)
 				continue;
 			len = header->len;
+			if (len > (int)sizeof(mybuf)) len = sizeof(mybuf);
+			memcpy(mybuf, buf, len);
+			buf = mybuf;
 		} else if (mode == MODEU) {
 			struct pcap_pkthdr *header;
 			int r = pcap_next_ex(pcap_handle, &header, (const u_char **)&buf);
