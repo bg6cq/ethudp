@@ -1270,40 +1270,36 @@ void process_raw_to_udp(void)	// used by mode==0 & mode==1
 				}
 			}
 		}
+		if (mode == MODEU) {
+			u_int8_t *pkt;
+			int plen;
+			pkt = buf + offset + 12;
+			plen = len - 12;
+			if (plen >= 4 && pkt[0] == 0x81 && pkt[1] == 0x00) { pkt += 4; plen -= 4; }
+			if (plen >= 2 && pkt[0] == 0x08 && pkt[1] == 0x00) {
+				struct iphdr *ip = (struct iphdr *)(pkt + 2);
+				if (ip->version == 4 && !(ntohs(ip->frag_off) & 0x1fff) &&
+				    ip->protocol == IPPROTO_UDP) {
+					int iphlen = ip->ihl * 4;
+					struct udphdr *udph = (struct udphdr *)((u_int8_t *)ip + iphlen);
+					int udplen = ntohs(udph->len);
+					if (udplen >= 8) {
+						int paylen = udplen - 8;
+						u_int8_t *payload = (u_int8_t *)udph + 8;
+						if (paylen > (int)sizeof(mybuf) - offset)
+							paylen = (int)sizeof(mybuf) - offset;
+						memcpy(mybuf + offset, payload, paylen);
+						buf = mybuf;
+						len = paylen;
+					} else continue;
+				} else continue;
+			} else continue;
+		}
 		if ((enc_key_len > 0) || (lz4 > 0)) {
 			len = do_encrypt((u_int8_t *) buf + offset, len, nbuf);
 			pbuf = nbuf;
 		} else
 			pbuf = buf + offset;
-		if (mode == MODEU) { // find the UDP packet
-			u_int8_t *packet;
-			if (len < 40)
-				return;
-			packet = buf + 12;      // skip ethernet dst & src addr
-			len -= 12;
-			if ((packet[0] == 0x81) && (packet[1] == 0x00)) {       // skip 802.1Q tag 0x8100
-				packet += 4;
-				len -= 4;
-			}
-			if ((packet[0] == 0x08) && (packet[1] == 0x00)) {       // IPv4 packet 0x0800
-				packet += 2;
-				len -= 2;
-				struct iphdr *ip = (struct iphdr *)packet;
-				if (ip->version != 4)
-					return; // only support IPv4
-				if (ntohs(ip->frag_off) & 0x1fff)
-					return; // not the first fragment
-				if (ip->protocol != IPPROTO_UDP)
-					return; // not UDP packet
-				if (ntohs(ip->tot_len) > len)
-					return; // tot_len should < len
-
-				struct udphdr *udph = (struct udphdr *)(packet + ip->ihl * 4);
-				pbuf = packet + ip->ihl * 4 + 8;
-				len = ntohs(udph->len) - 8;
-			} else
-				return;
-		}
 
 		send_udp_to_remote(pbuf, len, current_remote);
 	}
