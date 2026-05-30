@@ -1405,7 +1405,7 @@ int do_udp_frag_recv(unsigned char *buf, int len)
 void process_udp_to_raw(int index)
 {
 	u_int8_t buf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
-	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH];
+	u_int8_t nbuf[MAX_PACKET_SIZE + EVP_MAX_BLOCK_LENGTH + LZ4_SPACE];
 	u_int8_t *pbuf;
 	int len;
 
