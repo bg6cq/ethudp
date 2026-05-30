@@ -1721,7 +1721,7 @@ void do_benchmark(void)
 			break;
 	}
 	gettimeofday(&end_tm, NULL);
-	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000L + end_tm.tv_usec) - start_tm.tv_usec;
+	float tspan = ((end_tm.tv_sec - start_tm.tv_sec) * 1000000LL + end_tm.tv_usec) - start_tm.tv_usec;
 	tspan = tspan / 1000000L;
 	fprintf(stderr, "%0.3f seconds\n", tspan);
 	fprintf(stderr, "PPS: %.0f PKT/S, %lu(%lu) Byte, %.0f(%.0f) Byte/S\n", (float)BENCHCNT / tspan, pkt_len, pkt_len_send, 1.0 * pkt_len / tspan,
