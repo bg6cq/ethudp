@@ -650,7 +650,7 @@ u_int16_t tcp_sum_calc(u_int16_t len_tcp, u_int16_t src_addr[], u_int16_t dest_a
 
 	/* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
 	if (nleft > 0)
-		sum += *w & ntohs(0xFF00);	/* Thanks to Dalton */
+		sum += ((u_int8_t)(*w)) << 8;
 
 	/* add the pseudo header */
 	sum += src_addr[0];
@@ -685,7 +685,7 @@ u_int16_t tcp_sum_calc_v6(u_int16_t len_tcp, u_int16_t src_addr[], u_int16_t des
 
 	/* if nleft is 1 there ist still on byte left. We add a padding byte (0xFF) to build a 16bit word */
 	if (nleft > 0)
-		sum += *w & ntohs(0xFF00);	/* Thanks to Dalton */
+		sum += ((u_int8_t)(*w)) << 8;
 
 	/* add the pseudo header */
 	int i;
