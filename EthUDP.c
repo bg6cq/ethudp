@@ -1879,6 +1879,14 @@ int main(int argc, char *argv[])
 		enc_key_len = strlen((char *)enc_key);
 	} else if ((enc_algorithm == 0) && (enc_key_len != 0))	// enc_key set, but enc_algorithm not set, set enc_algorithm to AES-128
 		enc_algorithm = AES_128;
+	#ifdef ENABLE_OPENSSL
+	if (enc_algorithm == AES_128 && enc_key_len < 16)
+		err_msg("Warning: AES-128 key should be at least 16 bytes, got %d", enc_key_len);
+	else if (enc_algorithm == AES_192 && enc_key_len < 24)
+		err_msg("Warning: AES-192 key should be at least 24 bytes, got %d", enc_key_len);
+	else if (enc_algorithm == AES_256 && enc_key_len < 32)
+		err_msg("Warning: AES-256 key should be at least 32 bytes, got %d", enc_key_len);
+	#endif
 	if (mode == -1)
 		usage();
 	if (debug) {
