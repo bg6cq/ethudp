@@ -1803,11 +1803,13 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			strncpy(dev_name, argv[i], IFNAMSIZ - 1);
+			dev_name[IFNAMSIZ - 1] = ' ';
 		} else if (strcmp(argv[i], "-n") == 0) {
 			i++;
 			if (argc - i <= 0)
 				usage();
 			strncpy(name, argv[i], MAXLEN - 1);
+			name[MAXLEN - 1] = ' ';
 		} else if (strcmp(argv[i], "-lz4") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1823,6 +1825,7 @@ int main(int argc, char *argv[])
 			if (argc - i <= 0)
 				usage();
 			strncpy(mypassword, argv[i], MAXLEN - 1);
+			mypassword[MAXLEN - 1] = ' ';
 		} else if (strcmp(argv[i], "-enc") == 0) {
 			i++;
 			if (argc - i <= 0)
@@ -1855,6 +1858,7 @@ int main(int argc, char *argv[])
 				usage();
 			memset(run_cmd, 0, MAXLEN);
 			strncpy((char *)run_cmd, argv[i], MAXLEN - 1);
+			run_cmd[MAXLEN - 1] = ' ';
 		} else
 			got_one = 0;
 		if (got_one)
