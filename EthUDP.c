@@ -741,16 +741,21 @@ void fix_mss(u_int8_t *buf, int len, int index)
 		struct iphdr *ip = (struct iphdr *)packet;
 		if (ip->version != 4)
 			return;	// check ipv4
+		if ((int)(ip->ihl * 4) > len)
+			return;	// ihl (5-15) yields 20-60 bytes; guard OOB read
 		if (ntohs(ip->frag_off) & 0x1fff)
 			return;	// not the first fragment
 		if (ip->protocol != IPPROTO_TCP)
 			return;	// not tcp packet
 		if (ntohs(ip->tot_len) > len)
-			return;	// tot_len should < len 
+			return;	// tot_len should < len
 
 		struct tcphdr *tcph = (struct tcphdr *)(packet + ip->ihl * 4);
 		if (!tcph->syn)
 			return;
+		if ((int)(tcph->doff * 4) < (int)sizeof(struct tcphdr)
+		    || (int)(tcph->doff * 4) > len - (int)(ip->ihl * 4))
+			return;	// validate TCP header length before walking options
 
 		if (debug)
 			Debug("fixmss ipv4 tcp syn");
@@ -788,12 +793,15 @@ void fix_mss(u_int8_t *buf, int len, int index)
 			return;	// check ipv6
 		if (ip6->ip6_nxt != IPPROTO_TCP)
 			return;	// not tcp packet
-		if (ntohs(ip6->ip6_plen) > len)
-			return;	// tot_len should < len 
+		if ((int)(40 + ntohs(ip6->ip6_plen)) > len)
+			return;	// ip6_plen is payload only; add 40-byte IPv6 header
 
 		struct tcphdr *tcph = (struct tcphdr *)(packet + 40);
 		if (!tcph->syn)
 			return;
+		if ((int)(tcph->doff * 4) < (int)sizeof(struct tcphdr)
+		    || (int)(tcph->doff * 4) > len - 40)
+			return;	// validate TCP header length
 		if (debug)
 			Debug("fixmss ipv6 tcp syn");
 		u_int8_t *opt = (u_int8_t *) tcph;
